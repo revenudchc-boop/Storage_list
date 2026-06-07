@@ -2705,11 +2705,14 @@ tr {
         margin-bottom: 1.2cm;
     }
     
+    /* تكرار رأس الجدول في كل صفحة */
     thead {
         display: table-header-group;
     }
     
+    /* منع قطع الصف الواحد بين صفحتين - الحل الرئيسي لمشكلة السطور المقطوعة */
     tr {
+        page-break-inside: avoid;
         break-inside: avoid;
     }
 }
