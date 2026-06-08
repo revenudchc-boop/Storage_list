@@ -2564,14 +2564,15 @@ function exportAllWithPath() {
     }
 }
 
-// ========== دالة الطباعة ==========
 function printReport(tabId, title) {
+    // الحصول على محتوى التبويب النشط
     let activeTab = document.getElementById(tabId);
     if (!activeTab) {
         console.error("التبويب غير موجود:", tabId);
         return;
     }
     
+    // نسخ محتوى الإحصائيات والجدول
     let statsClone = activeTab.querySelector('.stats');
     let tableClone = activeTab.querySelector('table');
     
@@ -2580,12 +2581,22 @@ function printReport(tabId, title) {
         return;
     }
     
+    // نسخ عميق للمحتوى
     let statsContent = statsClone ? statsClone.cloneNode(true) : null;
     let tableContent = tableClone.cloneNode(true);
     
+    // ========== إزالة sticky من الجدول المنسوخ لمنع تداخل الرأس ==========
+    if (tableContent) {
+        let thead = tableContent.querySelector('thead');
+        let allTh = tableContent.querySelectorAll('th');
+        if (thead) thead.style.position = 'static';
+        allTh.forEach(th => th.style.position = 'static');
+    }
+    
+    // إنشاء نافذة طباعة جديدة
     let printWindow = window.open('', '_blank', 'width=1200,height=800');
     if (!printWindow) {
-        alert("الرجاء السماح للنوافذ المنبثقة");
+        alert("الرجاء السماح للنوافذ المنبثقة لاستخدام خاصية الطباعة");
         return;
     }
     
@@ -2595,141 +2606,212 @@ function printReport(tabId, title) {
         <head>
             <meta charset="UTF-8">
             <title>${title}</title>
-            <style>
-                * { font-family: 'Segoe UI', 'Arial', sans-serif; }
-                body { margin: 0; padding: 20px; }
-                .report-header { text-align: center; margin-bottom: 15px; border-bottom: 2px solid #0a3d62; padding-bottom: 10px; }
-                .report-header h1 { margin: 0; font-size: 16px; color: #0a3d62; }
-                .report-header p { margin: 5px 0 0; font-size: 11px; color: #666; }
-                .report-date { text-align: left; font-size: 9px; color: #6c757d; margin-bottom: 10px; }
-                table { width: 100%; border-collapse: collapse; font-size: 8px; }
-                th { background: #0a3d62; color: white; padding: 5px 2px; border: 1px solid #0a3d62; }
-                td { padding: 4px 2px; border: 1px solid #dee2e6; text-align: center; }
-                .stats { display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap; }
-                .stat-card { border: 1px solid #dee2e6; border-radius: 6px; padding: 5px; text-align: center; flex: 1; }
-                .stat-card .number { font-size: 14px; font-weight: bold; color: #0a3d62; }
-                .signatures { display: flex; justify-content: space-between; margin-top: 30px; padding-top: 15px; border-top: 1px solid #0a3d62; }
-                .signature-box { text-align: center; flex: 1; }
-                .signature-line { height: 25px; border-bottom: 1px solid #000; margin-bottom: 3px; }
-                
-		 @media print {
-			body { margin: 0; padding: 0; }
-			.no-print { display: none; }
-			
-			/* إخفاء عناصر التحكم */
-			.upload-area, .tabs, .settings-btn, .filters, .btn-container, 
-			.export-btn, .print-btn, .note, .settings-panel, .modal, 
-			.file-label, .export-all-btn, #currentFileName, .footer {
-				display: none !important;
-			}
-			
-			/* ========== الرأس ========== */
-			.report-header {
-				position: fixed;
-				top: 0;
-				left: 0;
-				right: 0;
-				background: white;
-				z-index: 100;
-				padding: 8px 5px;
-				border-bottom: 2px solid #0a3d62;
-				text-align: center;
-				font-size: 10px;
-				height: 2.2cm;  /* زيادة الرأس */
-			}
-			
-			/* ========== التذييل ========== */
-			.signatures {
-				position: fixed;
-				bottom: 0;
-				left: 0;
-				right: 0;
-				background: white;
-				z-index: 100;
-				display: flex !important;
-				justify-content: space-between;
-				padding: 8px 15px;
-				border-top: 2px solid #0a3d62;
-				font-size: 8px;
-				height: 1.5cm;  /* زيادة التذييل */
-			}
-			
-			/* ========== المساحة الباقية للبيانات ========== */
-			/* إجمالي الصفحة A4 = 29.7 سم */
-			/* الرأس (2.2) + التذييل (1.5) + الهوامش (2) = 5.7 سم */
-			/* المساحة المتبقية للبيانات = 24 سم */
-			
-			body {
-				margin-top: 2.8cm !important;
-				margin-bottom: 2.2cm !important;
-			}
-			
-			@page {
-				margin-top: 2.5cm;
-				margin-bottom: 2.5cm;
-			}
-			
-			/* تحسين عرض الجدول لاستغلال المساحة */
-			table {
-				font-size: 9px;
-				width: 100%;
-			}
-			
-			th, td {
-				padding: 4px 2px;
-			}
-			
-			thead {
-				display: table-header-group;
-			}
-			
-			tr {
-				page-break-inside: avoid;
-				break-inside: avoid;
-			}
-		}
-            </style>
+<style>
+    * { font-family: 'Segoe UI', sans-serif; }
+    body { padding: 20px; margin: 0; background: white; }
+    
+.report-header { 
+    text-align: center; 
+    margin-bottom: 10px;
+    border-bottom: 1px solid #0a3d62;
+    background: white;
+    padding: 5px 0;
+}
+.report-header h1 { 
+    color: #0a3d62; 
+    margin: 0; 
+    font-size: 1rem;
+}
+.report-header p { 
+    color: #666; 
+    margin: 2px 0 0;
+    font-size: 10px;
+}
+.report-date { 
+    text-align: left; 
+    font-size: 9px;
+    color: #6c757d; 
+    margin-bottom: 8px;
+}
+table { 
+    width: 100%; 
+    border-collapse: collapse; 
+    font-size: 9px; 
+    direction: ltr;
+}
+th { 
+    background: #0a3d62; 
+    color: white; 
+    padding: 4px 3px; 
+    border: 1px solid #0a3d62;
+}
+td { 
+    padding: 3px 3px; 
+    border: 1px solid #dee2e6; 
+    text-align: center;
+}
+.stats { 
+    display: flex; 
+    gap: 8px; 
+    margin-bottom: 15px; 
+    flex-wrap: wrap;
+}
+.stat-card { 
+    border: 1px solid #dee2e6; 
+    border-radius: 8px; 
+    padding: 6px; 
+    text-align: center; 
+    flex: 1; 
+    min-width: 80px;
+}
+.stat-card .number { 
+    font-size: 16px; 
+    font-weight: bold; 
+    color: #0a3d62;
+}
+.stat-card h3 { 
+    font-size: 10px; 
+    margin: 0;
+}
+.footer { 
+    margin-top: 15px;
+    text-align: center; 
+    font-size: 8px;
+    color: #6c757d; 
+    border-top: 1px solid #dee2e6; 
+    padding-top: 5px;
+}
+
+/* ========== إعدادات تكرار الـ Header في كل صفحة ========== */
+thead {
+    display: table-header-group;
+}
+
+tr {
+    break-inside: avoid;
+}
+
+/* التوقيعات - تظهر فقط عند الطباعة */
+.signatures {
+    display: none;
+}
+
+@media print {
+    body { margin: 0; padding: 0; }
+    .no-print { display: none; }
+    
+    /* إخفاء عناصر التحكم */
+    .upload-area, .tabs, .settings-btn, .filters, .btn-container, 
+    .export-btn, .print-btn, .note, .settings-panel, .modal, 
+    .file-label, .export-all-btn, #currentFileName, .footer {
+        display: none !important;
+    }
+    
+    /* ========== التعديلات الرئيسية لحل مشكلة المسافة ========== */
+    
+    /* الرأس - يظهر في أعلى كل صفحة مع مسافة مناسبة */
+    .report-header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        background: white;
+        z-index: 100;
+        padding: 5px 5px;
+        border-bottom: 1px solid #0a3d62;
+    }
+    
+    /* التوقيعات - تظهر في أسفل كل صفحة */
+    .signatures {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: white;
+        display: flex !important;
+        justify-content: space-between;
+        padding: 5px 10px;
+        border-top: 1px solid #0a3d62;
+        font-size: 8px;
+        z-index: 100;
+    }
+    
+    /* ========== زيادة المسافة بين أول سطر بيانات ورؤوس الأعمدة ========== */
+    /* هذه القيمة تتحكم في المسافة - جرب 2.5cm أو 3cm حسب الحاجة */
+    .stats, .report-date, #tablePrint {
+        margin-top: 2.2cm !important;
+    }
+    
+    /* مسافة إضافية خاصة بالجدول */
+    #tablePrint {
+        margin-top: 2.5cm !important;
+    }
+    
+    /* مسافة أسفل الصفحة قبل التوقيعات */
+    #tablePrint {
+        margin-bottom: 1.8cm !important;
+    }
+    
+    @page {
+        margin-top: 0.8cm;
+        margin-bottom: 1.5cm;
+    }
+    
+    thead {
+        display: table-header-group;
+    }
+    
+    tr {
+        break-inside: avoid;
+    }
+}
+</style>
         </head>
         <body>
             <div class="report-header">
                 <h1>📦 تقرير أيام التخزين</h1>
                 <p>${title}</p>
-                <div style="margin-top: 8px; font-size: 10px;">
-                    🚢 سفينة الشحن: ${document.getElementById("headerCarrierName")?.innerText || "—"} | 
-                    📅 تاريخ الشحن: ${document.getElementById("headerShippingDate")?.innerText || "—"} | 
-                    🏷️ الخط: ${document.getElementById("headerLineId")?.innerText || "—"}
+                <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #ddd; font-size: 11px; display: flex; justify-content: space-between; flex-wrap: wrap;">
+                    <div>🚢 <strong>سفينه الشحن:</strong> ${document.getElementById("headerCarrierName")?.innerText || "—"}</div>
+                    <div>📅 <strong>تاريخ الشحن:</strong> ${document.getElementById("headerShippingDate")?.innerText || "—"}</div>
+                    <div>🏷️ <strong>الخط:</strong> ${document.getElementById("headerLineId")?.innerText || "—"}</div>
                 </div>
             </div>
             <div class="report-date">تاريخ الطباعة: ${new Date().toLocaleString('ar-EG')}</div>
             <div id="statsPrint"></div>
             <div id="tablePrint"></div>
+
+            <!-- التوقيعات -->
             <div class="signatures">
-                <div class="signature-box">
-                    <div class="signature-line"></div>
+                <div style="text-align: center; flex: 1;">
+                    <div style="height: 35px; border-bottom: 1px solid #000; margin-bottom: 5px;"></div>
                     <div><strong>Signature</strong></div>
-                    <div>_________________</div>
-                    <div>Head of Operations Sector</div>
+                    <div style="font-size: 10px; margin-top: 5px;"><strong>Head of Operations Sector</strong></div>
                 </div>
-                <div class="signature-box">
-                    <div class="signature-line"></div>
+                <div style="text-align: center; flex: 1;">
+                    <div style="height: 35px; border-bottom: 1px solid #000; margin-bottom: 5px;"></div>
                     <div><strong>Signature</strong></div>
-                    <div>_________________</div>
-                    <div>Document Auditor</div>
+                    <div style="font-size: 10px; margin-top: 5px;"><strong>Document Auditor</strong></div>
                 </div>
-                <div class="signature-box">
-                    <div class="signature-line"></div>
+                <div style="text-align: center; flex: 1;">
+                    <div style="height: 35px; border-bottom: 1px solid #000; margin-bottom: 5px;"></div>
                     <div><strong>Signature</strong></div>
-                    <div>_________________</div>
-                    <div>Line Clerk</div>
+                    <div style="font-size: 10px; margin-top: 5px;"><strong>Line Clerk</strong></div>
                 </div>
             </div>
+
+            <div class="footer">تم إنشاؤه بواسطة نظام التخزين - تقرير تلقائي</div>
             <script>
-                window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); };
+                window.onload = function() {
+                    window.print();
+                    setTimeout(function() { window.close(); }, 500);
+                };
             <\/script>
         </body>
         </html>
     `);
     
+    // إضافة المحتوى المنسوخ
     if (statsContent) {
         printWindow.document.getElementById('statsPrint').appendChild(statsContent);
     }
