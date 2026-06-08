@@ -2566,14 +2566,12 @@ function exportAllWithPath() {
 
 // ========== دالة الطباعة ==========
 function printReport(tabId, title) {
-    // الحصول على محتوى التبويب النشط
     let activeTab = document.getElementById(tabId);
     if (!activeTab) {
         console.error("التبويب غير موجود:", tabId);
         return;
     }
     
-    // نسخ محتوى الإحصائيات والجدول
     let statsClone = activeTab.querySelector('.stats');
     let tableClone = activeTab.querySelector('table');
     
@@ -2582,14 +2580,12 @@ function printReport(tabId, title) {
         return;
     }
     
-    // نسخ عميق للمحتوى
     let statsContent = statsClone ? statsClone.cloneNode(true) : null;
     let tableContent = tableClone.cloneNode(true);
     
-    // إنشاء نافذة طباعة جديدة
     let printWindow = window.open('', '_blank', 'width=1200,height=800');
     if (!printWindow) {
-        alert("الرجاء السماح للنوافذ المنبثقة لاستخدام خاصية الطباعة");
+        alert("الرجاء السماح للنوافذ المنبثقة");
         return;
     }
     
@@ -2599,179 +2595,141 @@ function printReport(tabId, title) {
         <head>
             <meta charset="UTF-8">
             <title>${title}</title>
-<style>
-    * { font-family: 'Segoe UI', sans-serif; }
-    body { padding: 20px; margin: 0; background: white; }
-.report-header { 
-    text-align: center; 
-    margin-bottom: 10px;  /* تم التخفيض من 20px */
-    border-bottom: 1px solid #0a3d62;  /* تم التخفيض من 2px */
-    background: white;
-    padding: 5px 0;  /* إضافة مسافة داخلية صغيرة */
-}
-.report-header h1 { 
-    color: #0a3d62; 
-    margin: 0; 
-    font-size: 1rem;  /* تم التخفيض من 1.5rem */
-}
-.report-header p { 
-    color: #666; 
-    margin: 2px 0 0;  /* تم التخفيض من 5px */
-    font-size: 10px;  /* إضافة حجم خط أصغر */
-}
-.report-date { 
-    text-align: left; 
-    font-size: 9px;  /* تم التخفيض من 12px */
-    color: #6c757d; 
-    margin-bottom: 8px;  /* تم التخفيض من 15px */
-}
-table { width: 100%; border-collapse: collapse; font-size: 9px; direction: ltr; }  /* تم التخفيض من 10px */
-th { background: #0a3d62; color: white; padding: 4px 3px; border: 1px solid #0a3d62; }  /* تم التخفيض من 6px 4px */
-td { padding: 3px 3px; border: 1px solid #dee2e6; text-align: center; }  /* تم التخفيض من 4px 4px */
-.stats { display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap; }  /* تم التخفيض من 10px و 20px */
-.stat-card { border: 1px solid #dee2e6; border-radius: 8px; padding: 6px; text-align: center; flex: 1; min-width: 80px; }  /* تم التخفيض من 8px و 100px */
-.stat-card .number { font-size: 16px; font-weight: bold; color: #0a3d62; }  /* تم التخفيض من 20px */
-.stat-card h3 { font-size: 10px; margin: 0; }  /* إضافة تصغير للعنوان */
-.footer { 
-    margin-top: 15px;  /* تم التخفيض من 20px */
-    text-align: center; 
-    font-size: 8px;  /* تم التخفيض من 10px */
-    color: #6c757d; 
-    border-top: 1px solid #dee2e6; 
-    padding-top: 5px;  /* تم التخفيض من 10px */
-}
-
-/* ========== إعدادات تكرار الـ Header في كل صفحة ========== */
-thead {
-    display: table-header-group;
-}
-
-tr {
-    break-inside: avoid;
-}
-
-/* إخفاء التوقيعات في الشاشة العادية */
-.signatures {
-    display: none;
-}
-
-@media print {
-    body { margin: 0; padding: 0; }
-    .no-print { display: none; }
-    
-    /* إخفاء عناصر التحكم */
-    .upload-area, .tabs, .settings-btn, .filters, .btn-container, 
-    .export-btn, .print-btn, .note, .settings-panel, .modal, 
-    .file-label, .export-all-btn, #currentFileName, .footer {
-        display: none !important;
-    }
-    
-    /* تثبيت الرأس */
-    .report-header {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        background: white;
-        z-index: 100;
-        padding: 2px 5px;
-        border-bottom: 1px solid #0a3d62;
-        font-size: 8px;
-    }
-    
-    /* تثبيت التوقيعات */
-    .signatures {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        background: white;
-        display: flex !important;
-        justify-content: space-between;
-        padding: 3px 10px;
-        border-top: 1px solid #0a3d62;
-        font-size: 7px;
-        z-index: 100;
-    }
-    
-    /* إنشاء مسافة بين الرأس والجدول */
-    .stats, .report-date {
-        margin-top: 1.2cm !important;
-        padding-top: 0.3cm !important;
-    }
-    
-    @page {
-        margin-top: 0.5cm;
-        margin-bottom: 1.2cm;
-    }
-    
-    /* تكرار رأس الجدول في كل صفحة */
-    thead {
-        display: table-header-group;
-    }
-    
-    /* منع قطع الصف الواحد بين صفحتين - الحل الرئيسي لمشكلة السطور المقطوعة */
-    tr {
-        page-break-inside: avoid;
-        break-inside: avoid;
-    }
-}
-</style>
+            <style>
+                * { font-family: 'Segoe UI', 'Arial', sans-serif; }
+                body { margin: 0; padding: 20px; }
+                .report-header { text-align: center; margin-bottom: 15px; border-bottom: 2px solid #0a3d62; padding-bottom: 10px; }
+                .report-header h1 { margin: 0; font-size: 16px; color: #0a3d62; }
+                .report-header p { margin: 5px 0 0; font-size: 11px; color: #666; }
+                .report-date { text-align: left; font-size: 9px; color: #6c757d; margin-bottom: 10px; }
+                table { width: 100%; border-collapse: collapse; font-size: 8px; }
+                th { background: #0a3d62; color: white; padding: 5px 2px; border: 1px solid #0a3d62; }
+                td { padding: 4px 2px; border: 1px solid #dee2e6; text-align: center; }
+                .stats { display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap; }
+                .stat-card { border: 1px solid #dee2e6; border-radius: 6px; padding: 5px; text-align: center; flex: 1; }
+                .stat-card .number { font-size: 14px; font-weight: bold; color: #0a3d62; }
+                .signatures { display: flex; justify-content: space-between; margin-top: 30px; padding-top: 15px; border-top: 1px solid #0a3d62; }
+                .signature-box { text-align: center; flex: 1; }
+                .signature-line { height: 25px; border-bottom: 1px solid #000; margin-bottom: 3px; }
+                
+		 @media print {
+			body { margin: 0; padding: 0; }
+			.no-print { display: none; }
+			
+			/* إخفاء عناصر التحكم */
+			.upload-area, .tabs, .settings-btn, .filters, .btn-container, 
+			.export-btn, .print-btn, .note, .settings-panel, .modal, 
+			.file-label, .export-all-btn, #currentFileName, .footer {
+				display: none !important;
+			}
+			
+			/* ========== الرأس ========== */
+			.report-header {
+				position: fixed;
+				top: 0;
+				left: 0;
+				right: 0;
+				background: white;
+				z-index: 100;
+				padding: 8px 5px;
+				border-bottom: 2px solid #0a3d62;
+				text-align: center;
+				font-size: 10px;
+				height: 2.2cm;  /* زيادة الرأس */
+			}
+			
+			/* ========== التذييل ========== */
+			.signatures {
+				position: fixed;
+				bottom: 0;
+				left: 0;
+				right: 0;
+				background: white;
+				z-index: 100;
+				display: flex !important;
+				justify-content: space-between;
+				padding: 8px 15px;
+				border-top: 2px solid #0a3d62;
+				font-size: 8px;
+				height: 1.5cm;  /* زيادة التذييل */
+			}
+			
+			/* ========== المساحة الباقية للبيانات ========== */
+			/* إجمالي الصفحة A4 = 29.7 سم */
+			/* الرأس (2.2) + التذييل (1.5) + الهوامش (2) = 5.7 سم */
+			/* المساحة المتبقية للبيانات = 24 سم */
+			
+			body {
+				margin-top: 2.8cm !important;
+				margin-bottom: 2.2cm !important;
+			}
+			
+			@page {
+				margin-top: 2.5cm;
+				margin-bottom: 2.5cm;
+			}
+			
+			/* تحسين عرض الجدول لاستغلال المساحة */
+			table {
+				font-size: 9px;
+				width: 100%;
+			}
+			
+			th, td {
+				padding: 4px 2px;
+			}
+			
+			thead {
+				display: table-header-group;
+			}
+			
+			tr {
+				page-break-inside: avoid;
+				break-inside: avoid;
+			}
+		}
+            </style>
         </head>
         <body>
             <div class="report-header">
                 <h1>📦 تقرير أيام التخزين</h1>
                 <p>${title}</p>
-                <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #ddd; font-size: 12px; display: flex; justify-content: space-between; flex-wrap: wrap;">
-                    <div>🚢 <strong>سفينه الشحن (O/B Carrier Name):</strong> ${document.getElementById("headerCarrierName")?.innerText || "—"}</div>
-                    <div>📅 <strong>تاريخ الشحن (O/B Carrier ATD):</strong> ${document.getElementById("headerShippingDate")?.innerText || "—"}</div>
-                    <div>🏷️ <strong>الخط (Line ID):</strong> ${document.getElementById("headerLineId")?.innerText || "—"}</div>
+                <div style="margin-top: 8px; font-size: 10px;">
+                    🚢 سفينة الشحن: ${document.getElementById("headerCarrierName")?.innerText || "—"} | 
+                    📅 تاريخ الشحن: ${document.getElementById("headerShippingDate")?.innerText || "—"} | 
+                    🏷️ الخط: ${document.getElementById("headerLineId")?.innerText || "—"}
                 </div>
             </div>
             <div class="report-date">تاريخ الطباعة: ${new Date().toLocaleString('ar-EG')}</div>
             <div id="statsPrint"></div>
             <div id="tablePrint"></div>
-
-            <!-- التوقيعات -->
-<div class="signatures" style="display: flex; justify-content: space-between; margin-top: 40px; padding-top: 20px; border-top: 2px solid #0a3d62;">
-    <div style="text-align: center; flex: 1;">
-        <div style="height: 40px; border-bottom: 1px solid #000; margin-bottom: 5px;"></div>
-        <div><strong>Signature :</strong></div>
-        <div style="font-size: 11px; color: #666;">                  </div>
-        <div><strong>             </strong></div>
-        <div style="font-size: 11px;">                                 </div>
-        <div style="font-size: 11px; margin-top: 5px;"><strong>Head of Operations Sector</strong></div>
-    </div>
-    <div style="text-align: center; flex: 1;">
-        <div style="height: 40px; border-bottom: 1px solid #000; margin-bottom: 5px;"></div>
-        <div><strong>Signature :</strong></div>
-        <div style="font-size: 11px; color: #666;">                                 </div>
-        <div><strong>             </strong></div>
-        <div style="font-size: 11px;">                                 </div>
-        <div style="font-size: 11px; margin-top: 5px;"><strong>Document Auditor</strong></div>
-    </div>
-    <div style="text-align: center; flex: 1;">
-        <div style="height: 40px; border-bottom: 1px solid #000; margin-bottom: 5px;"></div>
-        <div><strong>Signature :</strong></div>
-        <div style="font-size: 11px; color: #666;">                                 </div>
-        <div><strong>             </strong></div>
-        <div style="font-size: 11px;">                             </div>
-        <div style="font-size: 11px; margin-top: 5px;"><strong>Line Clerk</strong></div>
-    </div>
-</div>
-
-<div class="footer">تم إنشاؤه بواسطة نظام  - تقرير تلقائي</div>
+            <div class="signatures">
+                <div class="signature-box">
+                    <div class="signature-line"></div>
+                    <div><strong>Signature</strong></div>
+                    <div>_________________</div>
+                    <div>Head of Operations Sector</div>
+                </div>
+                <div class="signature-box">
+                    <div class="signature-line"></div>
+                    <div><strong>Signature</strong></div>
+                    <div>_________________</div>
+                    <div>Document Auditor</div>
+                </div>
+                <div class="signature-box">
+                    <div class="signature-line"></div>
+                    <div><strong>Signature</strong></div>
+                    <div>_________________</div>
+                    <div>Line Clerk</div>
+                </div>
+            </div>
             <script>
-                window.onload = function() {
-                    window.print();
-                    setTimeout(function() { window.close(); }, 500);
-                };
+                window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); };
             <\/script>
         </body>
         </html>
     `);
     
-    // إضافة المحتوى المنسوخ
     if (statsContent) {
         printWindow.document.getElementById('statsPrint').appendChild(statsContent);
     }
@@ -3573,57 +3531,62 @@ function processAndDisplay5() {
         // ========== توزيع السماح على الفترات بالتسلسل (TRUCK أولاً ثم VESSEL) ==========
         let remainingFree = freeDays;
         
-        for (let i = 0; i < sortedPeriods.length; i++) {
-            let period = sortedPeriods[i];
-            let days = period.days;
-            
-            // خصم السماح من هذه الفترة
-            let deduction = Math.min(days, remainingFree);
-            let netDays = days - deduction;
-            if (netDays < 0) netDays = 0;
-            remainingFree -= deduction;
-            
-            let equipType = container.equipmentType;
-            let size = equipType.toString().match(/^(\d+)/)?.[1] || "";
-            let isRefrigerated = period.rawData["Is Refrigerated"] || "";
-            let type = (isRefrigerated === "true" || equipType.includes("R1")) ? "RF" : "GP";
-            let isOOG = period.rawData["Is OOG"] || "";
-            let isBundled = period.rawData["Is Bundled"] || "";
-            let isHazardous = period.rawData["Is Hazardous"] || "";
-            let imdgClass = period.rawData["IMDG Class"] || "";
-            let method = isExcl ? "🚫 سماح مستقل" : "🔄 سماح متسلسل";
-            
-            // تحديد نوع الفترة للعرض (من O/B Loc Type أو I/B Loc Type)
-            let displayType = period.obLocType || period.ibLocType || "—";
-            
-            result.push({
-                "Container No.": id,
-                "Size": size,
-                "Is OOG": isOOG,
-                "Is Refrigerated": isRefrigerated,
-                "O/B Loc Type": displayType,  // استخدام O/B Loc Type
-                "Is Bundled": isBundled,
-                "Is Hazardous": isHazardous,
-                "IMDG Class": imdgClass,
-                "Type": type,
-                "Line ID": lineId,
-                "طريقة الحساب": method,
-                "Flex String 01": period.flexString01,
-                "flex_04": period.flexString04,
-                "TRSHP Start": period.start,
-                "TRSHP End": period.end,
-                "TRSHP Days": days,
-                "TRSHP Free": deduction,
-                "TRSHP Net": netDays,
-                "Total Net": netDays,
-                "Vessel Name": period.vesselName,
-                "O/B Carrier Name": period.obCarrierName,
-                "O/B Carrier ATD": period.obCarrierATD,
-                "Period Order": i + 1,
-                "Period Type": displayType
-            });
-        }
-    }
+for (let i = 0; i < sortedPeriods.length; i++) {
+    let period = sortedPeriods[i];
+    let days = period.days;
+    
+    let deduction = Math.min(days, remainingFree);
+    let netDays = days - deduction;
+    if (netDays < 0) netDays = 0;
+    remainingFree -= deduction;
+    
+    let equipType = container.equipmentType;
+    let size = equipType.toString().match(/^(\d+)/)?.[1] || "";
+    let isRefrigerated = period.rawData["Is Refrigerated"] || "";
+    let type = (isRefrigerated === "true" || equipType.includes("R1")) ? "RF" : "GP";
+    let isOOG = period.rawData["Is OOG"] || "";
+    let isBundled = period.rawData["Is Bundled"] || "";
+    let isHazardous = period.rawData["Is Hazardous"] || "";
+    let imdgClass = period.rawData["IMDG Class"] || "";
+    let method = isExcl ? "🚫 سماح مستقل" : "🔄 سماح متسلسل";
+    let displayType = period.obLocType || period.ibLocType || "—";
+    
+    // ========== أضف هذه الأسطر هنا ==========
+    let hasMultiplePeriods = (sortedPeriods.length > 1);
+    let shouldShow = (type === "RF") || hasMultiplePeriods || (type === "GP" && netDays > 0);
+    // =====================================
+    
+    // لف result.push داخل شرط if
+    if (shouldShow) {
+        result.push({
+            "Container No.": id,
+            "Size": size,
+            "Is OOG": isOOG,
+            "Is Refrigerated": isRefrigerated,
+            "O/B Loc Type": displayType,
+            "Is Bundled": isBundled,
+            "Is Hazardous": isHazardous,
+            "IMDG Class": imdgClass,
+            "Type": type,
+            "Line ID": lineId,
+            "طريقة الحساب": method,
+            "Flex String 01": period.flexString01,
+            "flex_04": period.flexString04,
+            "TRSHP Start": period.start,
+            "TRSHP End": period.end,
+            "TRSHP Days": days,
+            "TRSHP Free": deduction,
+            "TRSHP Net": netDays,
+            "Total Net": netDays,
+            "Vessel Name": period.vesselName,
+            "O/B Carrier Name": period.obCarrierName,
+            "O/B Carrier ATD": period.obCarrierATD,
+            "Period Order": i + 1,
+            "Period Type": displayType
+        });
+    }  // <--- قوس إغلاق if
+}  
+	}// <--- قوس إغلاق for
     
     // ترتيب النتائج: حسب رقم الحاوية ثم حسب الترتيب (TRUCK ثم VESSEL)
     result.sort((a, b) => {
