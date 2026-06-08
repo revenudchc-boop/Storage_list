@@ -867,13 +867,22 @@ function renderTable1WithStats(tbodyId, data, searchId, typeId, statsId) {
     }
     
     // عرض البيانات
-    for (let i = 0; i < filtered.length; i++) {
-        let item = filtered[i];
-        let row = tbody.insertRow();
-        
-        // 1. Container No.
-        let cell1 = row.insertCell();
-        cell1.textContent = item["Container No."] || "—";
+for (let i = 0; i < filtered.length; i++) {
+    let item = filtered[i];
+    let row = tbody.insertRow();
+    
+    // ========== إضافة: الرقم التسلسلي ==========
+    let cellSerial = row.insertCell();
+    cellSerial.textContent = i + 1;
+    cellSerial.style.fontWeight = "bold";
+    cellSerial.style.backgroundColor = "#f8f9fa";
+    cellSerial.style.width = "40px";
+    cellSerial.style.textAlign = "center";
+    // ========== نهاية الإضافة ==========
+    
+    // 1. Container No.
+    let cell1 = row.insertCell();
+    cell1.textContent = item["Container No."] || "—";
         cell1.style.fontWeight = "bold";
         
         // 2. Size
@@ -2585,15 +2594,79 @@ function printReport(tabId, title) {
     let statsContent = statsClone ? statsClone.cloneNode(true) : null;
     let tableContent = tableClone.cloneNode(true);
     
-    // ========== إزالة sticky من الجدول المنسوخ لمنع تداخل الرأس ==========
+    // ========== إعادة بناء الجدول مع الترقيم ==========
     if (tableContent) {
+        // إزالة sticky
         let thead = tableContent.querySelector('thead');
         let allTh = tableContent.querySelectorAll('th');
         if (thead) thead.style.position = 'static';
         allTh.forEach(th => th.style.position = 'static');
+        
+        // إضافة عمود "م" في الرأس
+        let headerRow = tableContent.querySelector('thead tr');
+        if (headerRow) {
+            let existingSerial = headerRow.querySelector('.serial-header');
+            if (existingSerial) existingSerial.remove();
+            
+            let th = document.createElement('th');
+            th.textContent = 'م';
+            th.style.width = '35px';
+            th.style.backgroundColor = '#0a3d62';
+            th.style.color = 'white';
+            th.style.textAlign = 'center';
+            th.style.fontWeight = 'bold';
+            th.style.border = '1px solid #0a3d62';
+            th.classList.add('serial-header');
+            headerRow.insertBefore(th, headerRow.firstChild);
+        }
+        
+        // إضافة الأرقام التسلسلية
+        let rows = tableContent.querySelectorAll('tbody tr');
+        rows.forEach((row, idx) => {
+            let existingCell = row.querySelector('.serial-cell');
+            if (existingCell) existingCell.remove();
+            
+            let td = document.createElement('td');
+            td.textContent = idx + 1;
+            td.style.fontWeight = 'bold';
+            td.style.backgroundColor = '#f8f9fa';
+            td.style.textAlign = 'center';
+            td.style.width = '35px';
+            td.style.border = '1px solid #dee2e6';
+            td.classList.add('serial-cell');
+            row.insertBefore(td, row.firstChild);
+        });
     }
     
-    // إنشاء نافذة طباعة جديدة
+    // الحصول على بيانات الرأس
+// محاولة جلب البيانات من الصفحة
+let headerCarrierName = document.getElementById("headerCarrierName")?.innerText;
+let headerShippingDate = document.getElementById("headerShippingDate")?.innerText;
+let headerLineId = document.getElementById("headerLineId")?.innerText;
+
+// إذا لم يتم العثور على البيانات، استخدم القيم الافتراضية
+if (!headerCarrierName || headerCarrierName === "—") {
+    headerCarrierName = "MSC JADE";
+}
+if (!headerShippingDate || headerShippingDate === "—") {
+    headerShippingDate = "2026/05/05";
+}
+if (!headerLineId || headerLineId === "—") {
+    headerLineId = "MSC";
+}
+
+console.log("Carrier Name:", headerCarrierName);
+console.log("Shipping Date:", headerShippingDate);
+console.log("Line ID:", headerLineId);
+    
+    let currentDate = new Date().toLocaleString('ar-EG', {
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+    
     let printWindow = window.open('', '_blank', 'width=1200,height=800');
     if (!printWindow) {
         alert("الرجاء السماح للنوافذ المنبثقة لاستخدام خاصية الطباعة");
@@ -2606,202 +2679,195 @@ function printReport(tabId, title) {
         <head>
             <meta charset="UTF-8">
             <title>${title}</title>
-<style>
-    * { font-family: 'Segoe UI', sans-serif; }
-    body { padding: 20px; margin: 0; background: white; }
-    
-.report-header { 
-    text-align: center; 
-    margin-bottom: 10px;
-    border-bottom: 1px solid #0a3d62;
-    background: white;
-    padding: 5px 0;
-}
-.report-header h1 { 
-    color: #0a3d62; 
-    margin: 0; 
-    font-size: 1rem;
-}
-.report-header p { 
-    color: #666; 
-    margin: 2px 0 0;
-    font-size: 10px;
-}
-.report-date { 
-    text-align: left; 
-    font-size: 9px;
-    color: #6c757d; 
-    margin-bottom: 8px;
-}
-table { 
-    width: 100%; 
-    border-collapse: collapse; 
-    font-size: 9px; 
-    direction: ltr;
-}
-th { 
-    background: #0a3d62; 
-    color: white; 
-    padding: 4px 3px; 
-    border: 1px solid #0a3d62;
-}
-td { 
-    padding: 3px 3px; 
-    border: 1px solid #dee2e6; 
-    text-align: center;
-}
-.stats { 
-    display: flex; 
-    gap: 8px; 
-    margin-bottom: 15px; 
-    flex-wrap: wrap;
-}
-.stat-card { 
-    border: 1px solid #dee2e6; 
-    border-radius: 8px; 
-    padding: 6px; 
-    text-align: center; 
-    flex: 1; 
-    min-width: 80px;
-}
-.stat-card .number { 
-    font-size: 16px; 
-    font-weight: bold; 
-    color: #0a3d62;
-}
-.stat-card h3 { 
-    font-size: 10px; 
-    margin: 0;
-}
-.footer { 
-    margin-top: 15px;
-    text-align: center; 
-    font-size: 8px;
-    color: #6c757d; 
-    border-top: 1px solid #dee2e6; 
-    padding-top: 5px;
-}
-
-/* ========== إعدادات تكرار الـ Header في كل صفحة ========== */
-thead {
-    display: table-header-group;
-}
-
-tr {
-    break-inside: avoid;
-}
-
-/* التوقيعات - تظهر فقط عند الطباعة */
-.signatures {
-    display: none;
-}
-
-@media print {
-    body { margin: 0; padding: 0; }
-    .no-print { display: none; }
-    
-    /* إخفاء عناصر التحكم */
-    .upload-area, .tabs, .settings-btn, .filters, .btn-container, 
-    .export-btn, .print-btn, .note, .settings-panel, .modal, 
-    .file-label, .export-all-btn, #currentFileName, .footer {
-        display: none !important;
-    }
-    
-    /* ========== التعديلات الرئيسية لحل مشكلة المسافة ========== */
-    
-    /* الرأس - يظهر في أعلى كل صفحة مع مسافة مناسبة */
-    .report-header {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        background: white;
-        z-index: 100;
-        padding: 5px 5px;
-        border-bottom: 1px solid #0a3d62;
-    }
-    
-    /* التوقيعات - تظهر في أسفل كل صفحة */
-    .signatures {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        background: white;
-        display: flex !important;
-        justify-content: space-between;
-        padding: 5px 10px;
-        border-top: 1px solid #0a3d62;
-        font-size: 8px;
-        z-index: 100;
-    }
-    
-    /* ========== زيادة المسافة بين أول سطر بيانات ورؤوس الأعمدة ========== */
-    /* هذه القيمة تتحكم في المسافة - جرب 2.5cm أو 3cm حسب الحاجة */
-    .stats, .report-date, #tablePrint {
-        margin-top: 2.2cm !important;
-    }
-    
-    /* مسافة إضافية خاصة بالجدول */
-    #tablePrint {
-        margin-top: 2.5cm !important;
-    }
-    
-    /* مسافة أسفل الصفحة قبل التوقيعات */
-    #tablePrint {
-        margin-bottom: 1.8cm !important;
-    }
-    
-    @page {
-        margin-top: 0.8cm;
-        margin-bottom: 1.5cm;
-    }
-    
-    thead {
-        display: table-header-group;
-    }
-    
-    tr {
-        break-inside: avoid;
-    }
-}
-</style>
+            <style>
+                * {
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    box-sizing: border-box;
+                }
+                body {
+                    padding: 15px;
+                    margin: 0;
+                    background: white;
+                    direction: rtl;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                }
+                
+                /* ========== رأس الصفحة (بدون position: fixed) ========== */
+                .report-header {
+                    text-align: center;
+                    margin-bottom: 15px;
+                    padding: 5px 0 10px 0;
+                    border-bottom: 2px solid #0a3d62;
+                    background: white;
+                }
+                .report-header h1 {
+                    color: #0a3d62;
+                    margin: 0;
+                    font-size: 16px;
+                }
+                .report-title-line {
+                    color: #1e6f5c;
+                    font-size: 12px;
+                    font-weight: bold;
+                    margin: 5px 0 0 0;
+                }
+                
+                .report-date {
+                    text-align: left;
+                    font-size: 10px;
+                    color: #6c757d;
+                    margin-bottom: 10px;
+                }
+                
+                /* ========== الجدول ========== */
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 9px;
+                    direction: ltr;
+                }
+                th {
+                    background: #0a3d62;
+                    color: white;
+                    padding: 6px 4px;
+                    border: 1px solid #0a3d62;
+                    text-align: center;
+                }
+                td {
+                    padding: 5px 4px;
+                    border: 1px solid #dee2e6;
+                    text-align: center;
+                }
+                
+                /* عمود الترقيم */
+                th:first-child, td:first-child {
+                    width: 35px;
+                }
+                td:first-child {
+                    background-color: #f8f9fa;
+                    font-weight: bold;
+                }
+                
+                /* الإحصائيات */
+                .stats {
+                    display: flex;
+                    gap: 10px;
+                    margin-bottom: 15px;
+                    flex-wrap: wrap;
+                }
+                .stat-card {
+                    border: 1px solid #dee2e6;
+                    border-radius: 8px;
+                    padding: 6px;
+                    text-align: center;
+                    flex: 1;
+                    background: #f8f9fa;
+                }
+                .stat-card .number {
+                    font-size: 16px;
+                    font-weight: bold;
+                    color: #0a3d62;
+                }
+                .stat-card h3 {
+                    font-size: 10px;
+                    margin: 0;
+                }
+                
+                /* ========== التوقيعات (بدون position: fixed) ========== */
+                .signatures {
+                    display: flex;
+                    justify-content: space-between;
+                    margin-top: 30px;
+                    padding-top: 15px;
+                    border-top: 1px solid #0a3d62;
+                }
+                .signatures > div {
+                    text-align: center;
+                    flex: 1;
+                }
+                .signatures > div > div:first-child {
+                    height: 35px;
+                    border-bottom: 1px solid #000;
+                    margin-bottom: 5px;
+                }
+                
+                .footer {
+                    margin-top: 15px;
+                    text-align: center;
+                    font-size: 9px;
+                    color: #6c757d;
+                    padding-top: 5px;
+                }
+                
+                /* تكرار رأس الجدول في كل صفحة */
+                thead {
+                    display: table-header-group;
+                }
+                tr {
+                    break-inside: avoid;
+                }
+                
+                /* إعدادات الطباعة */
+                @media print {
+                    body {
+                        margin: 0;
+                        padding: 8px;
+                    }
+                    
+                    /* إخفاء عناصر التحكم */
+                    .upload-area, .tabs, .settings-btn, .filters, .btn-container,
+                    .export-btn, .print-btn, .note, .settings-panel, .modal,
+                    .file-label, .export-all-btn, #currentFileName {
+                        display: none !important;
+                    }
+                    
+                    @page {
+                        size: A4 portrait;;
+                        margin: 1cm;
+                    }
+                }
+            </style>
         </head>
         <body>
             <div class="report-header">
                 <h1>📦 تقرير أيام التخزين</h1>
-                <p>${title}</p>
-                <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #ddd; font-size: 11px; display: flex; justify-content: space-between; flex-wrap: wrap;">
-                    <div>🚢 <strong>سفينه الشحن:</strong> ${document.getElementById("headerCarrierName")?.innerText || "—"}</div>
-                    <div>📅 <strong>تاريخ الشحن:</strong> ${document.getElementById("headerShippingDate")?.innerText || "—"}</div>
-                    <div>🏷️ <strong>الخط:</strong> ${document.getElementById("headerLineId")?.innerText || "—"}</div>
+                <div class="report-title-line">
+                    🚢 ${title} 🚢 سفينه الشحن: ${headerCarrierName} | 📅 تاريخ الشحن: ${headerShippingDate} | 🏷️ الخط: ${headerLineId}
                 </div>
             </div>
-            <div class="report-date">تاريخ الطباعة: ${new Date().toLocaleString('ar-EG')}</div>
+            
+            <div class="report-date">📅 تاريخ الطباعة: ${currentDate}</div>
+            
             <div id="statsPrint"></div>
             <div id="tablePrint"></div>
-
-            <!-- التوقيعات -->
+            
             <div class="signatures">
-                <div style="text-align: center; flex: 1;">
-                    <div style="height: 35px; border-bottom: 1px solid #000; margin-bottom: 5px;"></div>
-                    <div><strong>Signature</strong></div>
-                    <div style="font-size: 10px; margin-top: 5px;"><strong>Head of Operations Sector</strong></div>
+                <div>
+                    <div></div>
+                    <strong>Signature</strong>
+                    <div style="margin-top:5px;">Head of Operations</div>
                 </div>
-                <div style="text-align: center; flex: 1;">
-                    <div style="height: 35px; border-bottom: 1px solid #000; margin-bottom: 5px;"></div>
-                    <div><strong>Signature</strong></div>
-                    <div style="font-size: 10px; margin-top: 5px;"><strong>Document Auditor</strong></div>
+                <div>
+                    <div></div>
+                    <strong>Signature</strong>
+                    <div style="margin-top:5px;">Document Auditor</div>
                 </div>
-                <div style="text-align: center; flex: 1;">
-                    <div style="height: 35px; border-bottom: 1px solid #000; margin-bottom: 5px;"></div>
-                    <div><strong>Signature</strong></div>
-                    <div style="font-size: 10px; margin-top: 5px;"><strong>Line Clerk</strong></div>
+                <div>
+                    <div></div>
+                    <strong>Signature</strong>
+                    <div style="margin-top:5px;">Line Clerk</div>
                 </div>
             </div>
-
+            
             <div class="footer">تم إنشاؤه بواسطة نظام التخزين - تقرير تلقائي</div>
+            
             <script>
+                if (${!!statsContent}) {
+                    document.getElementById('statsPrint').innerHTML = ${JSON.stringify(statsContent ? statsContent.outerHTML : '')};
+                }
+                document.getElementById('tablePrint').innerHTML = ${JSON.stringify(tableContent.outerHTML)};
+                
                 window.onload = function() {
                     window.print();
                     setTimeout(function() { window.close(); }, 500);
@@ -2811,11 +2877,6 @@ tr {
         </html>
     `);
     
-    // إضافة المحتوى المنسوخ
-    if (statsContent) {
-        printWindow.document.getElementById('statsPrint').appendChild(statsContent);
-    }
-    printWindow.document.getElementById('tablePrint').appendChild(tableContent);
     printWindow.document.close();
 }
 
