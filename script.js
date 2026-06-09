@@ -4555,6 +4555,17 @@ function renderAdvancedStatsTab6(data) {
     let totalCount = data.length;
     
     let refrigeratedContainers = data.filter(i => i["Is Refrigerated"] === "true");
+	    // ========== الحاويات المبردة ==========
+    let refrigeratedCount = refrigeratedContainers.length;
+    let refrigeratedStrgeNet = refrigeratedContainers.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
+    let refrigeratedExprtNet = refrigeratedContainers.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
+    
+    let refrigerated20 = refrigeratedContainers.filter(i => i["Size"]?.toString().startsWith("2"));
+    let refrigerated40 = refrigeratedContainers.filter(i => i["Size"]?.toString().startsWith("4"));
+    let refrigerated20Count = refrigerated20.length;
+    let refrigerated40Count = refrigerated40.length;
+    let refrigerated20StrgeNet = refrigerated20.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
+    let refrigerated40StrgeNet = refrigerated40.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
     let size20Containers = data.filter(i => i["Size"]?.toString().startsWith("2"));
     let size40Containers = data.filter(i => i["Size"]?.toString().startsWith("4"));
     
@@ -4567,6 +4578,17 @@ function renderAdvancedStatsTab6(data) {
                 <div style="font-size: 14px;">📦 إجمالي STRGE</div>
                 <div style="font-size: 28px; font-weight: bold;">${totalStrgeNet}</div>
                 <div style="font-size: 12px;">صافي أيام التخزين</div>
+            </div>
+			    <div style="flex: 1; background: linear-gradient(135deg, #4facfe, #00f2fe); border-radius: 12px; padding: 15px; text-align: center; color: white;">
+                <div style="font-size: 14px;">❄️ الحاويات المبردة (RF)</div>
+                <div style="font-size: 28px; font-weight: bold;">${refrigeratedCount}</div>
+                <div style="font-size: 12px;">عدد الحاويات</div>
+                <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.3); font-size: 12px;">
+                    <div>📦 إجمالي STRGE: ${refrigeratedStrgeNet} يوم</div>
+                    <div>📤 إجمالي EXPRT: ${refrigeratedExprtNet} يوم</div>
+                    <div>📦 20 قدم: ${refrigerated20Count} حاوية (${refrigerated20StrgeNet} يوم)</div>
+                    <div>📦 40 قدم: ${refrigerated40Count} حاوية (${refrigerated40StrgeNet} يوم)</div>
+                </div>
             </div>
             <div style="flex: 1; background: linear-gradient(135deg, #f093fb, #f5576c); border-radius: 12px; padding: 15px; text-align: center; color: white;">
                 <div style="font-size: 14px;">📤 إجمالي EXPRT</div>
