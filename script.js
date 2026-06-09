@@ -1534,21 +1534,26 @@ for (let [id, data] of tempMap.entries()) {
     let strgeEnd = "";
     
     // حساب أيام STRGE مع استبعاد اليوم المشترك
-    for (let st of data.strgeList) {
-        if (st.start && st.end) {
-            let days = diffDays(st.start, st.end);
-            
-            // استبعاد اليوم المشترك بين IMPRT و STRGE
-            if (imEnd && st.start && imEnd === st.start) {
+// حساب أيام STRGE مع استبعاد اليوم المشترك
+for (let st of data.strgeList) {
+    if (st.start && st.end) {
+        let days = diffDays(st.start, st.end);
+        
+        // استبعاد اليوم المشترك بين IMPRT و STRGE (مقارنة بالتاريخ)
+        if (imEnd && st.start) {
+            let imEndDate = new Date(imEnd);
+            let stStartDate = new Date(st.start);
+            if (imEndDate.getTime() === stStartDate.getTime()) {
                 days = days - 1;
                 if (days < 0) days = 0;
             }
-            
-            totalStrgeDays += days;
-            if (!strgeStart || st.start < strgeStart) strgeStart = st.start;
-            if (!strgeEnd || st.end > strgeEnd) strgeEnd = st.end;
         }
+        
+        totalStrgeDays += days;
+        if (!strgeStart || st.start < strgeStart) strgeStart = st.start;
+        if (!strgeEnd || st.end > strgeEnd) strgeEnd = st.end;
     }
+}
     
     let lineId = data.lineId || "";
     let isExcl = isExcluded(lineId, excludeLines4);
