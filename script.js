@@ -4364,7 +4364,7 @@ let hasTrshp = trshpArray.length > 0;
         // معلومات الحاوية
         let equipType = container.equipmentType;
         let size = equipType.toString().match(/^(\d+)/)?.[1] || "";
-        let isRefrigerated = st["Is Refrigerated"] || "";
+        let isRefrigerated = ex["Is Refrigerated"] || "";
         let type = (isRefrigerated === "true" || equipType.includes("R1")) ? "RF" : "GP";
         let isOOG = st["Is OOG"] || "";
         let isBundled = st["Is Bundled"] || "";
