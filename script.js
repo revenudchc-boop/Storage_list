@@ -2835,13 +2835,13 @@ console.log("Line ID:", headerLineId);
             </style>
         </head>
         <body>
-            <div class="report-header">
-                <h1>📦 تقرير أيام التخزين</h1>
-                <div class="report-title-line">
-                    🚢 ${title} 🚢 سفينه الشحن: ${headerCarrierName} | 📅 تاريخ الشحن: ${headerShippingDate} | 🏷️ الخط: ${headerLineId}
-                </div>
-            </div>
-            
+			<div class="report-header">
+				<h1>📦 تقرير أيام التخزين</h1>
+				<div class="report-title-line">
+					${title}
+				</div>
+			</div>
+         
             <div class="report-date">📅 تاريخ الطباعة: ${currentDate}</div>
             
             <div id="statsPrint"></div>
@@ -2885,9 +2885,12 @@ console.log("Line ID:", headerLineId);
     printWindow.document.close();
 }
 
-// ربط زر الطباعة
+// تبويب 1
 document.getElementById("printBtn1").onclick = function() {
-    printReport('tab1', '📋 تقرير TRSHP + EXPRT');
+    let carrier = document.getElementById("headerCarrierName")?.innerText || "—";
+    let date = document.getElementById("headerShippingDate")?.innerText || "—";
+    let line = document.getElementById("headerLineId")?.innerText || "—";
+    printReport('tab1', `تقرير TRSHP + EXPRT | 🚢 ${carrier} | 📅 ${date} | 🏷️ ${line}`);
 };
 
 function renderTable2WithSelectedColumns(tbodyId, data, searchId, typeId, statsId) {
@@ -3000,9 +3003,12 @@ function openColumnModalTab2() {
     };
 }
 
-// أزرار التبويب 2
+// تبويب 2
 document.getElementById("printBtn2").onclick = () => {
-    printReport('tab2', '📦 تقرير STRGE + EXPRT + IMPRT');
+    let carrier = document.getElementById("headerCarrierName")?.innerText || "—";
+    let date = document.getElementById("headerShippingDate")?.innerText || "—";
+    let line = document.getElementById("headerLineId")?.innerText || "—";
+    printReport('tab2', `تقرير STRGE + EXPRT + IMPRT | 🚢 ${carrier} | 📅 ${date} | 🏷️ ${line}`);
 };
 document.getElementById("selectColumnsBtn2").onclick = () => openColumnModalTab2();
 
@@ -3236,9 +3242,12 @@ function openColumnModalTab4() {
     };
 }
 
-// أزرار التبويب 3
+// تبويب 3
 document.getElementById("printBtn3").onclick = () => {
-    printReport('tab3', '📤 تقرير EXPRT فقط');
+    let carrier = document.getElementById("headerCarrierName")?.innerText || "—";
+    let date = document.getElementById("headerShippingDate")?.innerText || "—";
+    let line = document.getElementById("headerLineId")?.innerText || "—";
+    printReport('tab3', `تقرير EXPRT فقط | 🚢 ${carrier} | 📅 ${date} | 🏷️ ${line}`);
 };
 document.getElementById("selectColumnsBtn3").onclick = () => openColumnModalTab3();
 
@@ -3260,7 +3269,10 @@ document.getElementById("typeTab3")?.addEventListener("change", () => {
 
 // أزرار التبويب 4
 document.getElementById("printBtn4").onclick = () => {
-    printReport('tab4', '📦 تقرير STRGE فارغ (MTY) + IMPRT');
+    let carrier = document.getElementById("headerCarrierName")?.innerText || "—";
+    let date = document.getElementById("headerShippingDate")?.innerText || "—";
+    let line = document.getElementById("headerLineId")?.innerText || "—";
+    printReport('tab4', `تقرير STRGE فارغ (MTY) + IMPRT | 🚢 ${carrier} | 📅 ${date} | 🏷️ ${line}`);
 };
 document.getElementById("selectColumnsBtn4").onclick = () => openColumnModalTab4();
 
@@ -4239,9 +4251,12 @@ function renderTable5Safe(tbodyId, data, searchId, typeId, statsId) {
 
 
 
-// أزرار التبويب 5
+// تبويب 5
 document.getElementById("printBtn5").onclick = () => {
-    printReport('tab5', '🚛 تقرير TRSHP فقط');
+    let carrier = document.getElementById("headerCarrierName")?.innerText || "—";
+    let date = document.getElementById("headerShippingDate")?.innerText || "—";
+    let line = document.getElementById("headerLineId")?.innerText || "—";
+    printReport('tab5', `تقرير TRSHP فقط | 🚢 ${carrier} | 📅 ${date} | 🏷️ ${line}`);
 };
 document.getElementById("selectColumnsBtn5").onclick = () => openColumnModalTab5();
 
@@ -4650,8 +4665,13 @@ document.getElementById("addExcludeBtn6").onclick = () => {
 document.getElementById("searchTab6")?.addEventListener("input", () => renderTable6("bodyTab6", currentData6, "searchTab6", "typeTab6", "statsTab6"));
 document.getElementById("typeTab6")?.addEventListener("change", () => renderTable6("bodyTab6", currentData6, "searchTab6", "typeTab6", "statsTab6"));
 
-// طباعة التبويب 6
-document.getElementById("printBtn6").onclick = () => printReport('tab6', '📦 تقرير STRGE + EXPRT فقط');
+// تبويب 6
+document.getElementById("printBtn6").onclick = () => {
+    let carrier = document.getElementById("headerCarrierName")?.innerText || "—";
+    let date = document.getElementById("headerShippingDate")?.innerText || "—";
+    let line = document.getElementById("headerLineId")?.innerText || "—";
+    printReport('tab6', `تقرير STRGE + EXPRT فقط | 🚢 ${carrier} | 📅 ${date} | 🏷️ ${line}`);
+};	
 
 // تصدير التبويب 6
 document.getElementById("exportBtn6").onclick = () => {
