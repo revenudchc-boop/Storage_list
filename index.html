@@ -244,12 +244,16 @@
 </div>
 
     <div class="tabs">
+		<button class="tab-btn" data-tab="tab8">📊 Dashboard</button>
         <button class="tab-btn active" data-tab="tab1">📋 TRSHP + EXPRT</button>
         <button class="tab-btn" data-tab="tab2">📦 STRGE + EXPRT + IMPRT</button>
         <button class="tab-btn" data-tab="tab3">📤 EXPRT فقط</button>
         <button class="tab-btn" data-tab="tab4">📦 STRGE فارغ (MTY) + IMPRT</button>
 		<button class="tab-btn" data-tab="tab5">🚛 TRSHP فقط</button>
 		<button class="tab-btn" data-tab="tab6">📦 STRGE + EXPRT فقط</button>
+		<button class="tab-btn" data-tab="tab7">📥 IMPRT + FORWARD</button>  <!-- ← أضف هذا -->
+		
+
     </div>
 
     <!-- تبويب 1 -->
@@ -371,7 +375,7 @@
             <input type="text" id="searchTab2" placeholder="🔍 بحث برقم الحاوية..." />
             <select id="typeTab2">
                 <option value="">كل الأنواع</option>
-                <option value="RF">RF (مبرد)</option>
+                <option value="RF">RF (ثلاجه)</option>
                 <option value="GP">GP (عام)</option>
             </select>
         </div>
@@ -455,7 +459,7 @@
             <input type="text" id="searchTab3" placeholder="🔍 بحث برقم الحاوية..." />
             <select id="typeTab3">
                 <option value="">كل الأنواع</option>
-                <option value="RF">RF (مبرد)</option>
+                <option value="RF">RF (ثلاجه)</option>
                 <option value="GP">GP (عام)</option>
             </select>
         </div>
@@ -528,7 +532,7 @@
             <input type="text" id="searchTab4" placeholder="🔍 بحث برقم الحاوية..." />
             <select id="typeTab4">
                 <option value="">كل الأنواع</option>
-                <option value="RF">RF (مبرد)</option>
+                <option value="RF">RF (ثلاجه)</option>
                 <option value="GP">GP (عام)</option>
             </select>
         </div>
@@ -604,7 +608,7 @@
             <input type="text" id="searchTab5" placeholder="🔍 بحث برقم الحاوية..." />
             <select id="typeTab5">
                 <option value="">كل الأنواع</option>
-                <option value="RF">RF (مبرد)</option>
+                <option value="RF">RF (ثلاجه)</option>
                 <option value="GP">GP (عام)</option>
             </select>
         </div>
@@ -622,6 +626,7 @@
                     <tr>
                         <th>Container No.</th>
                         <th>Size</th>
+						<th>Freight Kind</th>  <!-- ← أضف هذا -->
                         <th>Is OOG</th>
                         <th>Is Refrigerated</th>
                         <th>Is Bundled</th>
@@ -646,7 +651,7 @@
         </div>
     </div>
 	
-	<!-- تبويب 6: STRGE + EXPRT فقط -->
+<!-- تبويب 6: STRGE + EXPRT فقط -->
 <div id="tab6" class="tab-content">
     <div style="text-align: left; padding: 15px 25px 0 25px;">
         <button class="settings-btn" id="settingsBtn6">⚙️ إعدادات فترات السماح (STRGE/EXPRT)</button>
@@ -681,7 +686,7 @@
         <input type="text" id="searchTab6" placeholder="🔍 بحث برقم الحاوية..." />
         <select id="typeTab6">
             <option value="">كل الأنواع</option>
-            <option value="RF">RF (مبرد)</option>
+            <option value="RF">RF (ثلاجه)</option>
             <option value="GP">GP (عام)</option>
         </select>
     </div>
@@ -725,11 +730,111 @@
                 </tr>
             </thead>
             <tbody id="bodyTab6">
-                <tr><td colspan="25">📂 يرجى تحميل ملف Excel<\/td></tr>
+                <tr><td colspan="25">📂 يرجى تحميل ملف Excel</td></tr>
             </tbody>
         </table>
     </div>
 </div>
+
+<!-- تبويب 8: Dashboard شامل -->
+<div id="tab8" class="tab-content">
+    <div style="padding: 20px 25px 0 25px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+        <div>
+            <h2 style="color: #0a3d62; margin-top: 0;">📊 لوحة التحكم الشاملة</h2>
+            <p style="color: #6c757d; margin: 0;">ملخص إحصائيات جميع التبويبات في صفحة واحدة</p>
+        </div>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <button onclick="printDashboard()" class="print-btn" style="background:#0a3d62; color:white; border:none; padding:8px 20px; border-radius:30px; cursor:pointer; font-weight:bold; font-size:13px; transition:0.3s;">
+                🖨️ طباعة
+            </button>
+            <button onclick="exportDashboardExcel()" class="export-btn" style="background:#28a745; color:white; border:none; padding:8px 20px; border-radius:30px; cursor:pointer; font-weight:bold; font-size:13px; transition:0.3s;">
+                📎 تصدير Excel
+            </button>
+        </div>
+    </div>
+    
+    <div id="dashboardContainer" style="padding: 0 25px 25px 25px;">
+        <div style="text-align:center; padding:50px; color:#6c757d;">
+            📂 يرجى تحميل ملف Excel لعرض الإحصائيات
+        </div>
+    </div>
+</div>
+
+<!-- ===== تبويب 7: IMPRT + FORWARD (مستقل) ===== -->
+<div id="tab7" class="tab-content">
+    <div style="text-align: left; padding: 15px 25px 0 25px;">
+        <button class="settings-btn" id="settingsBtn7">⚙️ إعدادات فترات السماح (IMPRT + FORWARD)</button>
+    </div>
+    <div id="settingsPanel7" class="settings-panel">
+        <h3>⚙️ إعدادات فترات السماح - IMPRT + FORWARD</h3>
+        <h4>🚫 استثناء خطوط</h4>
+        <div class="exclude-row">
+            <select id="excludeLine7">
+                <option value="">اختر خطاً للاستثناء</option>
+                <option value="MSC">MSC</option>
+                <option value="ZIM">ZIM</option>
+                <option value="VALOR">VALOR</option>
+                <option value="YM">YM</option>
+            </select>
+            <button id="addExcludeBtn7" style="background:#dc3545;">➕ إضافة خط للاستثناء</button>
+        </div>
+        <div id="excludeList7" style="margin-bottom: 15px;"></div>
+        <h4>📋 فترات السماح</h4>
+        <div id="imprtForwardPeriodsList7" class="periods-list"></div>
+        <button id="addImprtForwardPeriodBtn7" class="add-period">➕ إضافة فترة جديدة</button>
+        <div style="margin-top: 20px;">
+            <button id="savePeriodsBtn7" class="add-period" style="background:#28a745;">💾 حفظ جميع الفترات</button>
+            <button id="closeSettings7" class="add-period" style="background:#6c757d;">إغلاق</button>
+        </div>
+    </div>
+    <div id="statsTab7" class="stats" style="display: none;"></div>
+    <div class="filters" id="filtersTab7" style="display: none;">
+        <input type="text" id="searchTab7" placeholder="🔍 بحث برقم الحاوية..." />
+        <select id="typeTab7">
+            <option value="">كل الأنواع</option>
+            <option value="RF">RF (ثلاجه)</option>
+            <option value="GP">GP (عام)</option>
+        </select>
+    </div>
+    <div class="table-wrapper" id="wrapperTab7" style="display: none;">
+        <div class="btn-container" style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+            <div style="display: flex; gap: 10px;">
+                <button class="print-btn" id="printBtn7">🖨️ طباعة التقرير</button>
+                <button class="settings-btn" id="selectColumnsBtn7" style="background:#6c757d;">📊 اختيار الأعمدة</button>
+            </div>
+            <button class="export-btn" id="exportBtn7">📎 تصدير إلى Excel</button>
+        </div>
+        <div class="note">📅 فترات السماح | 📥 IMPRT + FORWARD (تبدأ من PaidThruDate + 1)</div>
+<table id="tableTab7">
+    <thead>
+        <tr>
+            <th>رقم الحاوية</th>
+            <th>الحجم</th>
+            <th>OOG</th>
+            <th>ثلاجه</th>
+            <th>خطر</th>
+            <th>IMDG</th>
+            <th>النوع</th>
+            <th>الخط</th>
+            <th>نوع</th>
+            <th>Start Time</th>
+            <th>PaidThruDate</th>
+            <th>Start (Paid+1)</th>
+            <th>End</th>
+            <th>Days</th>
+            <th>Free</th>
+            <th>Net</th>
+            <th>Vessel Name</th>
+        </tr>
+    </thead>
+    <tbody id="bodyTab7">
+        <tr><td colspan="17">📂 يرجى تحميل ملف Excel</td></tr>
+    </tbody>
+</table>
+    </div>
+</div>
+
+
 
 
     <div class="footer" id="footerMsg"></div>
