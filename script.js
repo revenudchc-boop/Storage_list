@@ -46,7 +46,7 @@ let selectedColumnsTab6 = JSON.parse(localStorage.getItem("selectedColumns_tab6"
 
 // قائمة رئيسية موحدة للخطوط (مخزنة في LocalStorage)
 // قائمة رئيسية موحدة للخطوط (تحديث تلقائي للقائمة الافتراضية)
-let defaultLinesList = ["MSC", "ZIM", "ALP", "YML", "MSK", "CMA", "HLC", "COS", "COE", "ONE", "HMM", "KLN", "UAS", "ARK", "SJK", "HSD", "BMC", "LITC", "PLS", "MSL", "CSL", "OVP", "SID", "SLG", "WEC", "TCS", "TSM", "OOCL", "EMES", "MDK", "MKL", "VUX", "OWV", "NNS", "ARRC", "ADM", "HAI", "BWL", "LOT", "MED", "SLS", "VOL", "REL", "WSHI"];
+let defaultLinesList = ["MSC", "ZIM", "ALP", "YML", "MSK", "CMA", "HLC", "COS", "COE", "ONE", "HMM", "KLN", "UAS", "ARK", "SJK", "HSD", "BMC", "LITC", "PLS", "MSL", "CSL", "OVP", "SID", "SLG", "WEC", "TCS", "TSM", "OOCL", "EMES", "MDK", "MKL", "VUX", "OWV", "NNS", "ARRC", "ADM", "HAI", "BWL", "LOT", "MED", "SLS", "VOL", "REL", "WSHI", "GFS", "UFS", "MGL", "MLN", "MOH", "GCS", "TAR", "HKL", "CSD", "HDS", "HSP", "TRK", "TRL", "CLH", "ESG", "ESL", "SIV", "SFT", "ROD"];
 let savedList = localStorage.getItem("masterLinesList");
 if (savedList) {
     masterLinesList = JSON.parse(savedList);
@@ -65,6 +65,152 @@ let currentData7 = [];
 let imprtForwardPeriods7 = JSON.parse(localStorage.getItem("imprtForwardPeriodsTab7")) || [];
 let excludeLines7 = JSON.parse(localStorage.getItem("excludeLines7")) || [];
 let nextIdImprtForward7 = imprtForwardPeriods7.length > 0 ? Math.max(...imprtForwardPeriods7.map(p => p.id)) + 1 : 1;
+
+// ========== تحميل الإعدادات تلقائياً من GitHub ==========
+const SETTINGS_URL = 'https://raw.githubusercontent.com/revenudchc-boop/Storage_Reports/main/settings.json';
+
+async function loadSettingsAutomatically() {
+    try {
+        console.log('🔄 جاري تحميل الإعدادات من GitHub...');
+        const response = await fetch(SETTINGS_URL);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const settings = await response.json();
+        applySettings(settings);
+        console.log('✅ تم تحميل الإعدادات بنجاح من GitHub');
+        document.getElementById("footerMsg").innerHTML = '✅ تم تحميل الإعدادات من GitHub تلقائياً';
+        
+    } catch (error) {
+        console.warn('⚠️ فشل تحميل الإعدادات من GitHub، سيتم استخدام الإعدادات المحفوظة محلياً:', error.message);
+        document.getElementById("footerMsg").innerHTML = '⚠️ فشل تحميل الإعدادات من GitHub، يتم استخدام الإعدادات المحفوظة محلياً';
+    }
+}
+
+function applySettings(settings) {
+	    console.log('🔄 تطبيق الإعدادات:', settings); // ← أضف هذا للتشخيص
+
+    // قائمة الخطوط الرئيسية
+    if (settings.masterLinesList) {
+        masterLinesList = settings.masterLinesList;
+        saveMasterLinesList();
+        updateAllLineSelects();
+    }
+    
+    // تبويب 1
+    if (settings.trshpPeriodsTab1) {
+        trshpPeriods1 = settings.trshpPeriodsTab1;
+        localStorage.setItem("trshpPeriodsTab1", JSON.stringify(trshpPeriods1));
+    }
+    if (settings.exprtPeriodsTab1) {
+        exprtPeriods1 = settings.exprtPeriodsTab1;
+        localStorage.setItem("exprtPeriodsTab1", JSON.stringify(exprtPeriods1));
+    }
+    if (settings.excludeLines1) {
+        excludeLines1 = settings.excludeLines1;
+        localStorage.setItem("excludeLines1", JSON.stringify(excludeLines1));
+    }
+    
+    // تبويب 2
+    if (settings.strgePeriodsTab2) {
+        strgePeriods2 = settings.strgePeriodsTab2;
+        localStorage.setItem("strgePeriodsTab2", JSON.stringify(strgePeriods2));
+    }
+    if (settings.exprtPeriodsTab2) {
+        exprtPeriods2 = settings.exprtPeriodsTab2;
+        localStorage.setItem("exprtPeriodsTab2", JSON.stringify(exprtPeriods2));
+    }
+    if (settings.excludeLines2) {
+        excludeLines2 = settings.excludeLines2;
+        localStorage.setItem("excludeLines2", JSON.stringify(excludeLines2));
+    }
+    
+    // تبويب 3
+    if (settings.exprtOnlyPeriodsTab3) {
+        exprtOnlyPeriods3 = settings.exprtOnlyPeriodsTab3;
+        localStorage.setItem("exprtOnlyPeriodsTab3", JSON.stringify(exprtOnlyPeriods3));
+    }
+    if (settings.excludeLines3) {
+        excludeLines3 = settings.excludeLines3;
+        localStorage.setItem("excludeLines3", JSON.stringify(excludeLines3));
+    }
+    
+    // تبويب 4
+    if (settings.emptyStrgePeriodsTab4) {
+        emptyStrgePeriods4 = settings.emptyStrgePeriodsTab4;
+        localStorage.setItem("emptyStrgePeriodsTab4", JSON.stringify(emptyStrgePeriods4));
+    }
+    if (settings.excludeLines4) {
+        excludeLines4 = settings.excludeLines4;
+        localStorage.setItem("excludeLines4", JSON.stringify(excludeLines4));
+    }
+    
+    // تبويب 5
+    if (settings.trshpOnlyPeriodsTab5) {
+        trshpOnlyPeriods5 = settings.trshpOnlyPeriodsTab5;
+        localStorage.setItem("trshpOnlyPeriodsTab5", JSON.stringify(trshpOnlyPeriods5));
+    }
+    if (settings.excludeLines5) {
+        excludeLines5 = settings.excludeLines5;
+        localStorage.setItem("excludeLines5", JSON.stringify(excludeLines5));
+    }
+    
+    // تبويب 6
+    if (settings.strgePeriodsTab6) {
+        strgePeriods6 = settings.strgePeriodsTab6;
+        localStorage.setItem("strgePeriodsTab6", JSON.stringify(strgePeriods6));
+    }
+    if (settings.exprtPeriodsTab6) {
+        exprtPeriods6 = settings.exprtPeriodsTab6;
+        localStorage.setItem("exprtPeriodsTab6", JSON.stringify(exprtPeriods6));
+    }
+    if (settings.excludeLines6) {
+        excludeLines6 = settings.excludeLines6;
+        localStorage.setItem("excludeLines6", JSON.stringify(excludeLines6));
+    }
+    
+    // تبويب 7
+    if (settings.imprtForwardPeriodsTab7) {
+        imprtForwardPeriods7 = settings.imprtForwardPeriodsTab7;
+        localStorage.setItem("imprtForwardPeriodsTab7", JSON.stringify(imprtForwardPeriods7));
+    }
+    if (settings.excludeLines7) {
+        excludeLines7 = settings.excludeLines7;
+        localStorage.setItem("excludeLines7", JSON.stringify(excludeLines7));
+    }
+    
+    // تفضيلات الأعمدة
+    if (settings.selectedColumns) {
+        for (let key in settings.selectedColumns) {
+            selectedColumns[key] = settings.selectedColumns[key];
+            localStorage.setItem(`selectedColumns_${key}`, JSON.stringify(selectedColumns[key]));
+        }
+    }
+    
+    // تحديث واجهة المستخدم
+    initializeAllSelects();
+    refreshPeriodsDisplay('1');
+    refreshPeriodsDisplay('2');
+    refreshPeriodsDisplay('3');
+    refreshPeriodsDisplay('4');
+    refreshPeriodsDisplay('5');
+    refreshPeriodsDisplay('6');
+    refreshPeriodsDisplay('7');
+    displayExcludeList('excludeList1', excludeLines1, '1');
+    displayExcludeList('excludeList2', excludeLines2, '2');
+    displayExcludeList('excludeList3', excludeLines3, '3');
+    displayExcludeList('excludeList4', excludeLines4, '4');
+    displayExcludeList('excludeList5', excludeLines5, '5');
+    displayExcludeList('excludeList6', excludeLines6, '6');
+    displayExcludeList('excludeList7', excludeLines7, '7');
+    
+    console.log('✅ تم تطبيق جميع الإعدادات بنجاح');
+}
+
+
+
 // دالة لحفظ القائمة الرئيسية
 function saveMasterLinesList() {
     localStorage.setItem("masterLinesList", JSON.stringify(masterLinesList));
@@ -206,8 +352,7 @@ function processExcelFile(file) {
             processAndDisplay5();
             processAndDisplay6();
 			processAndDisplay7();  // ← هنا المكان الصحيح
-// بعد processAndDisplay7()
-renderDashboard();
+
             
             document.getElementById("footerMsg").innerHTML = `✅ تم تحميل: ${file.name} | TRSHP+EXPRT: ${currentData1.length} | STRGE+EXPRT+IMPRT: ${currentData2.length} | EXPRT فقط: ${currentData3.length} | STRGE فارغ: ${currentData4.length} | TRSHP فقط: ${currentData5.length} | STRGE+EXPRT فقط: ${currentData6.length} | IMPRT+FORWARD: ${currentData7.length}`;
         } catch(err) {
@@ -390,6 +535,7 @@ const availableColumnsTab6 = {
         { name: "Line ID", label: "الخط", default: true },
         { name: "طريقة الحساب", label: "طريقة الحساب", default: false },
         { name: "Flex String 01", label: "Flex String 01", default: false },
+		{ name: "flex_04", label: "flex_04", default: false },  // ← أضف هذا
         { name: "STRGE Start", label: "بداية STRGE", default: true },
         { name: "STRGE End", label: "نهاية STRGE", default: true },
         { name: "STRGE Days", label: "أيام STRGE", default: true },
@@ -641,9 +787,6 @@ function loadLastFileFromStorage() {
         processAndDisplay5();
         processAndDisplay6();
 		processAndDisplay7();  // ← هنا المكان الصحيح
-		
-		// بعد processAndDisplay7()
-renderDashboard();
 
         updateHeaderInfo('1');
         
@@ -948,7 +1091,12 @@ function renderAdvancedStats(data) {
                     <div style="font-weight: bold;">📋 بدون Dray Status:</div>
                     <div>📦 20 قدم: ${size20NoDrayNet} يوم</div>
                     <div>📦 40 قدم: ${size40NoDrayNet} يوم</div>
-
+                    <div style="font-weight: bold; margin-top: 5px;">📐 OOG:</div>
+                    <div>📦 20 قدم: ${oog20Net} يوم (${oog20.length} حاوية)</div>
+                    <div>📦 40 قدم: ${oog40Net} يوم (${oog40.length} حاوية)</div>
+                    <div style="font-weight: bold; margin-top: 5px;">⚠️ Hazardous:</div>
+                    <div>📦 20 قدم: ${hazardous20Net} يوم (${hazardous20.length} حاوية)</div>
+                    <div>📦 40 قدم: ${hazardous40Net} يوم (${hazardous40.length} حاوية)</div>
                 </div>
             </div>
             
@@ -1453,6 +1601,7 @@ function processAndDisplay1() {
             let drayStatus = firstTr["Dray Status"] || "";
             totalFreeDays = getFreeDays(trshpPeriods1, lineId, convertDate(firstTr["Start Time"]), flexString01, drayStatus);
         }
+
         
         // ترتيب الفترات حسب I/B Loc Type: VESSEL أولاً ثم TRUCK
         let vesselPeriods = [];
@@ -1503,16 +1652,17 @@ function processAndDisplay1() {
         // ===================================================
         // حساب EXPRT Free من أول EXPRT (للخصم من السماح الكلي)
         // ===================================================
-        let exFreeForDeduction = 0;
-        for (let ex of exprtList) {
-            let obLocType = (ex["O/B Loc Type"] || "").trim().toUpperCase();
-            let isTruck = (obLocType === "TRUCK");
-            if (!isTruck) {
-                let exStart = convertDate(ex["Rule Start Time"] || "");
-                exFreeForDeduction = getFreeDays(exprtPeriods1, lineId, exStart, "", "");
-                break;
-            }
-        }
+		let exFreeForDeduction = 0;
+		for (let ex of exprtList) {
+			let obLocType = (ex["O/B Loc Type"] || "").trim().toUpperCase();
+			let isTruck = (obLocType === "TRUCK");
+			if (!isTruck) {
+				let exStart = convertDate(ex["Rule Start Time"] || "");
+				let flexString01 = ex["Flex String 01"] || "";  // ← استخدم Flex من EXPRT
+				exFreeForDeduction = getFreeDays(exprtPeriods1, lineId, exStart, flexString01, "");
+				break;
+			}
+		}
         
         // حساب إجمالي أيام EXPRT
         let totalExprtDays = 0;
@@ -2641,12 +2791,8 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
         else if (tabNumber === '4') updateHeaderFromDisplayData('4', currentData4);
         else if (tabNumber === '5') updateHeaderFromDisplayData('5', currentData5);
         else if (tabNumber === '6') updateHeaderFromDisplayData('6', currentData6);
-        else if (tabNumber === '7') updateHeaderFromDisplayData('7', currentData7);
-        else if (tabNumber === '8') {
-            // تحديث Dashboard عند النقر عليه
-            renderDashboard();
-            updateHeaderFromDisplayData('1', currentData1);
-        }
+		else if (tabNumber === '7') updateHeaderFromDisplayData('7', currentData7);  // ← أضف هذا
+
     });
 });
 
@@ -3104,9 +3250,20 @@ function printReport(tabId, title) {
         return;
     }
     
-    // نسخ محتوى الإحصائيات والجدول
-    let statsClone = activeTab.querySelector('.stats');
-    let tableClone = activeTab.querySelector('table');
+    // ===== نسخ الإحصائيات فقط =====
+    let statsElement = activeTab.querySelector('.stats');
+    let statsClone = statsElement ? statsElement.cloneNode(true) : null;
+    
+    // ===== الحصول على الجدول من داخل .table-wrapper =====
+    let tableWrapper = activeTab.querySelector('.table-wrapper');
+    let tableElement = tableWrapper ? tableWrapper.querySelector('table') : null;
+    
+    // إذا لم يتم العثور على الجدول، حاول البحث مباشرة
+    if (!tableElement) {
+        tableElement = activeTab.querySelector('table');
+    }
+    
+    let tableClone = tableElement ? tableElement.cloneNode(true) : null;
     
     if (!tableClone) {
         console.error("الجدول غير موجود");
@@ -3162,25 +3319,23 @@ function printReport(tabId, title) {
     }
     
     // الحصول على بيانات الرأس
-// محاولة جلب البيانات من الصفحة
-let headerCarrierName = document.getElementById("headerCarrierName")?.innerText;
-let headerShippingDate = document.getElementById("headerShippingDate")?.innerText;
-let headerLineId = document.getElementById("headerLineId")?.innerText;
+    let headerCarrierName = document.getElementById("headerCarrierName")?.innerText;
+    let headerShippingDate = document.getElementById("headerShippingDate")?.innerText;
+    let headerLineId = document.getElementById("headerLineId")?.innerText;
 
-// إذا لم يتم العثور على البيانات، استخدم القيم الافتراضية
-if (!headerCarrierName || headerCarrierName === "—") {
-    headerCarrierName = "MSC JADE";
-}
-if (!headerShippingDate || headerShippingDate === "—") {
-    headerShippingDate = "2026/05/05";
-}
-if (!headerLineId || headerLineId === "—") {
-    headerLineId = "MSC";
-}
+    if (!headerCarrierName || headerCarrierName === "—") {
+        headerCarrierName = "MSC JADE";
+    }
+    if (!headerShippingDate || headerShippingDate === "—") {
+        headerShippingDate = "2026/05/05";
+    }
+    if (!headerLineId || headerLineId === "—") {
+        headerLineId = "MSC";
+    }
 
-console.log("Carrier Name:", headerCarrierName);
-console.log("Shipping Date:", headerShippingDate);
-console.log("Line ID:", headerLineId);
+    console.log("Carrier Name:", headerCarrierName);
+    console.log("Shipping Date:", headerShippingDate);
+    console.log("Line ID:", headerLineId);
     
     let currentDate = new Date().toLocaleString('ar-EG', {
         year: 'numeric',
@@ -3216,7 +3371,6 @@ console.log("Line ID:", headerLineId);
                     print-color-adjust: exact;
                 }
                 
-                /* ========== رأس الصفحة (بدون position: fixed) ========== */
                 .report-header {
                     text-align: center;
                     margin-bottom: 15px;
@@ -3243,7 +3397,6 @@ console.log("Line ID:", headerLineId);
                     margin-bottom: 10px;
                 }
                 
-                /* ========== الجدول ========== */
                 table {
                     width: 100%;
                     border-collapse: collapse;
@@ -3263,7 +3416,6 @@ console.log("Line ID:", headerLineId);
                     text-align: center;
                 }
                 
-                /* عمود الترقيم */
                 th:first-child, td:first-child {
                     width: 35px;
                 }
@@ -3272,7 +3424,6 @@ console.log("Line ID:", headerLineId);
                     font-weight: bold;
                 }
                 
-                /* الإحصائيات */
                 .stats {
                     display: flex;
                     gap: 10px;
@@ -3297,7 +3448,6 @@ console.log("Line ID:", headerLineId);
                     margin: 0;
                 }
                 
-                /* ========== التوقيعات (بدون position: fixed) ========== */
                 .signatures {
                     display: flex;
                     justify-content: space-between;
@@ -3323,7 +3473,6 @@ console.log("Line ID:", headerLineId);
                     padding-top: 5px;
                 }
                 
-                /* تكرار رأس الجدول في كل صفحة */
                 thead {
                     display: table-header-group;
                 }
@@ -3331,14 +3480,12 @@ console.log("Line ID:", headerLineId);
                     break-inside: avoid;
                 }
                 
-                /* إعدادات الطباعة */
                 @media print {
                     body {
                         margin: 0;
                         padding: 8px;
                     }
                     
-                    /* إخفاء عناصر التحكم */
                     .upload-area, .tabs, .settings-btn, .filters, .btn-container,
                     .export-btn, .print-btn, .note, .settings-panel, .modal,
                     .file-label, .export-all-btn, #currentFileName {
@@ -3346,19 +3493,19 @@ console.log("Line ID:", headerLineId);
                     }
                     
                     @page {
-                        size: A4 portrait;;
+                        size: A4 portrait;
                         margin: 1cm;
                     }
                 }
             </style>
         </head>
         <body>
-			<div class="report-header">
-				<h1>📦 تقرير أيام التخزين</h1>
-				<div class="report-title-line">
-					${title}
-				</div>
-			</div>
+            <div class="report-header">
+                <h1>📦 تقرير أيام التخزين</h1>
+                <div class="report-title-line">
+                    ${title}
+                </div>
+            </div>
          
             <div class="report-date">📅 تاريخ الطباعة: ${currentDate}</div>
             
@@ -4998,6 +5145,7 @@ function processAndDisplay6() {
                 "Line ID": lineId,
                 "طريقة الحساب": method,
                 "Flex String 01": flexString01,
+				"flex_04": ex["Flex String 04"] || "",  // ← أضف هذا السطر
                 "STRGE Start": stStart,
                 "STRGE End": stEnd,
                 "STRGE Days": stDays,
@@ -5835,6 +5983,7 @@ function renderTable6(tbodyId, data, searchId, typeId, statsId) {
                 <td>${item["Line ID"] || "—"}<\/td>
                 <td><span class="${methodClass}">${item["طريقة الحساب"] || "—"}</span><\/td>
                 <td>${flexHtml}<\/td>
+				<td>${item["flex_04"] || "—"}</td>  <!-- ← أضف هذا السطر -->
                 <td>${item["STRGE Start"] || "—"}<\/td>
                 <td>${item["STRGE End"] || "—"}<\/td>
                 <td style="background:#e3f2fd;">${item["STRGE Days"] || "—"}<\/td>
@@ -5872,6 +6021,10 @@ function renderAdvancedStatsTab6(data) {
     let refrigeratedCount = refrigeratedContainers.length;
     let refrigeratedStrgeNet = refrigeratedContainers.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
     let refrigeratedExprtNet = refrigeratedContainers.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
+	    // ========== أضف هذا السطر هنا ==========
+    let refrigeratedDays = refrigeratedContainers.reduce((s, i) => s + (i["EXPRT Days"] || 0), 0);
+    // =====================================
+
     
     let refrigerated20 = refrigeratedContainers.filter(i => i["Size"]?.toString().startsWith("2"));
     let refrigerated40 = refrigeratedContainers.filter(i => i["Size"]?.toString().startsWith("4"));
@@ -5894,8 +6047,8 @@ function renderAdvancedStatsTab6(data) {
             </div>
 			    <div style="flex: 1; background: linear-gradient(135deg, #4facfe, #00f2fe); border-radius: 12px; padding: 15px; text-align: center; color: white;">
                 <div style="font-size: 14px;">❄️ الحاويات المبردة (RF)</div>
-                <div style="font-size: 28px; font-weight: bold;">${refrigeratedCount}</div>
-                <div style="font-size: 12px;">عدد الحاويات</div>
+				<div style="font-size: 28px; font-weight: bold;">${refrigeratedDays}</div>
+				<div style="font-size: 12px;">إجمالي أيام EXPRT للمبردة</div>
                 <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.3); font-size: 12px;">
                     <div>📦 إجمالي STRGE: ${refrigeratedStrgeNet} يوم</div>
                     <div>📤 إجمالي EXPRT: ${refrigeratedExprtNet} يوم</div>
@@ -6071,27 +6224,29 @@ function renderTable6WithSelectedColumns(tbodyId, data, searchId, typeId, statsI
             let cell = row.insertCell();
             let value = item[colName];
             
-            if (["Is OOG", "Is Refrigerated", "Is Bundled", "Is Hazardous"].includes(colName)) {
-                cell.textContent = value === "true" ? "✅" : "❌";
-            } else if (colName === "طريقة الحساب") {
-                let methodClass = value === "🚫 سماح مستقل" ? "exclude-badge" : "method-badge";
-                cell.innerHTML = `<span class="${methodClass}">${value || "—"}</span>`;
-            } else if (colName === "Flex String 01") {
-                if (value === "TRUE") {
-                    cell.innerHTML = '<span style="background:#ff6b6b; color:white; padding:2px 8px; border-radius:12px;">⭐ خاص</span>';
-                } else if (value === "FALSE") {
-                    cell.innerHTML = '<span style="background:#4facfe; color:white; padding:2px 8px; border-radius:12px;">📋 عادي</span>';
-                } else {
-                    cell.textContent = "—";
-                }
-            } else if (colName === "Container No.") {
-                cell.textContent = value || "—";
-                cell.style.fontWeight = "bold";
-            } else if (colName === "Type") {
-                cell.innerHTML = `<strong>${value || "—"}</strong>`;
-            } else {
-                cell.textContent = value || "—";
-            }
+			if (["Is OOG", "Is Refrigerated", "Is Bundled", "Is Hazardous"].includes(colName)) {
+				cell.textContent = value === "true" ? "✅" : "❌";
+			} else if (colName === "طريقة الحساب") {
+				let methodClass = value === "🚫 سماح مستقل" ? "exclude-badge" : "method-badge";
+				cell.innerHTML = `<span class="${methodClass}">${value || "—"}</span>`;
+			} else if (colName === "Flex String 01") {
+				if (value === "TRUE") {
+					cell.innerHTML = '<span style="background:#ff6b6b; color:white; padding:2px 8px; border-radius:12px;">⭐ خاص</span>';
+				} else if (value === "FALSE") {
+					cell.innerHTML = '<span style="background:#4facfe; color:white; padding:2px 8px; border-radius:12px;">📋 عادي</span>';
+				} else {
+					cell.textContent = "—";
+				}
+			} else if (colName === "flex_04") {  // ← أضف هذا الشرط
+				cell.textContent = value || "—";
+			} else if (colName === "Container No.") {
+				cell.textContent = value || "—";
+				cell.style.fontWeight = "bold";
+			} else if (colName === "Type") {
+				cell.innerHTML = `<strong>${value || "—"}</strong>`;
+			} else {
+				cell.textContent = value || "—";
+			}
         });
     }
     
@@ -6382,246 +6537,225 @@ displayExcludeList('excludeList6', excludeLines6, '6');
 // ربط زر اختيار الأعمدة للتبويب 5
 document.getElementById("selectColumnsBtn5").onclick = () => openColumnModalTab5();
 
-// ================================================
-// دالة عرض لوحة التحكم الشاملة
-// ================================================
-function renderDashboard() {
-    let container = document.getElementById("dashboardContainer");
-    if (!container) return;
+/// ========== تحميل الإعدادات تلقائياً عند فتح الصفحة ==========
+document.addEventListener("DOMContentLoaded", function() {
+    setTimeout(() => {
+        loadSettingsAutomatically();
+    }, 500);
+});
+
+// ============================================================
+// ========== دوال تحميل الإعدادات من GitHub تلقائياً ==========
+// ============================================================
+
+const GITHUB_SETTINGS_URL = 'https://raw.githubusercontent.com/revenudchc-boop/Storage_Reports/main/settings.json';
+
+// ===== دالة التحميل الرئيسية =====
+async function loadSettingsFromGitHub() {
+    try {
+        console.log('🔄 [GitHub] جاري تحميل الإعدادات...');
+        
+        const response = await fetch(GITHUB_SETTINGS_URL + '?t=' + Date.now());
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const settings = await response.json();
+        
+        // تطبيق الإعدادات على المتغيرات مباشرة
+        applyGitHubSettings(settings);
+        
+        console.log('✅ [GitHub] تم تحميل الإعدادات بنجاح');
+        document.getElementById("footerMsg").innerHTML = '✅ تم تحميل الإعدادات من GitHub تلقائياً';
+        
+    } catch (error) {
+        console.warn('⚠️ [GitHub] فشل التحميل، استخدام localStorage:', error.message);
+        document.getElementById("footerMsg").innerHTML = '⚠️ استخدام الإعدادات المحفوظة محلياً';
+    }
+}
+
+// ===== دالة تطبيق الإعدادات =====
+function applyGitHubSettings(settings) {
+    console.log('🔄 [GitHub] تطبيق الإعدادات...');
     
-    // التحقق من وجود بيانات
-    let hasData = currentData1.length > 0 || currentData2.length > 0 || currentData3.length > 0 || 
-                  currentData4.length > 0 || currentData5.length > 0 || currentData6.length > 0 || currentData7.length > 0;
-    
-    if (!hasData) {
-        container.innerHTML = `
-            <div style="text-align:center; padding:50px; color:#6c757d;">
-                📂 يرجى تحميل ملف Excel لعرض الإحصائيات
-            </div>
-        `;
-        return;
+    // قائمة الخطوط
+    if (settings.masterLinesList) {
+        masterLinesList = settings.masterLinesList;
+        localStorage.setItem("masterLinesList", JSON.stringify(masterLinesList));
+        updateAllLineSelects();
     }
     
-    let html = '<div style="display: flex; flex-direction: column; gap: 20px;">';
-    
     // تبويب 1
-    if (currentData1.length > 0) {
-        html += `
-            <div style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden;">
-                <div style="background: #0a3d62; color: white; padding: 10px 15px; font-weight: bold; font-size: 14px;">
-                    📋 تبويب 1: TRSHP + EXPRT (${currentData1.length} حاوية)
-                </div>
-                <div style="padding: 10px;">
-                    ${renderAdvancedStats(currentData1)}
-                </div>
-            </div>
-        `;
+    if (settings.trshpPeriodsTab1) {
+        trshpPeriods1 = settings.trshpPeriodsTab1;
+        localStorage.setItem("trshpPeriodsTab1", JSON.stringify(trshpPeriods1));
+        nextIdTrshp1 = trshpPeriods1.length > 0 ? Math.max(...trshpPeriods1.map(p => p.id)) + 1 : 1;
+    }
+    if (settings.exprtPeriodsTab1) {
+        exprtPeriods1 = settings.exprtPeriodsTab1;
+        localStorage.setItem("exprtPeriodsTab1", JSON.stringify(exprtPeriods1));
+        nextIdExprt1 = exprtPeriods1.length > 0 ? Math.max(...exprtPeriods1.map(p => p.id)) + 1 : 1;
+    }
+    if (settings.excludeLines1) {
+        excludeLines1 = settings.excludeLines1;
+        localStorage.setItem("excludeLines1", JSON.stringify(excludeLines1));
     }
     
     // تبويب 2
-    if (currentData2.length > 0) {
-        html += `
-            <div style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden;">
-                <div style="background: #1e6f5c; color: white; padding: 10px 15px; font-weight: bold; font-size: 14px;">
-                    📦 تبويب 2: STRGE + EXPRT + IMPRT (${currentData2.length} حاوية)
-                </div>
-                <div style="padding: 10px;">
-                    ${renderAdvancedStatsTab2(currentData2)}
-                </div>
-            </div>
-        `;
+    if (settings.strgePeriodsTab2) {
+        strgePeriods2 = settings.strgePeriodsTab2;
+        localStorage.setItem("strgePeriodsTab2", JSON.stringify(strgePeriods2));
+        nextIdStrge2 = strgePeriods2.length > 0 ? Math.max(...strgePeriods2.map(p => p.id)) + 1 : 1;
+    }
+    if (settings.exprtPeriodsTab2) {
+        exprtPeriods2 = settings.exprtPeriodsTab2;
+        localStorage.setItem("exprtPeriodsTab2", JSON.stringify(exprtPeriods2));
+        nextIdExprt2 = exprtPeriods2.length > 0 ? Math.max(...exprtPeriods2.map(p => p.id)) + 1 : 1;
+    }
+    if (settings.excludeLines2) {
+        excludeLines2 = settings.excludeLines2;
+        localStorage.setItem("excludeLines2", JSON.stringify(excludeLines2));
     }
     
     // تبويب 3
-    if (currentData3.length > 0) {
-        html += `
-            <div style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden;">
-                <div style="background: #856404; color: white; padding: 10px 15px; font-weight: bold; font-size: 14px;">
-                    📤 تبويب 3: EXPRT فقط (${currentData3.length} حاوية)
-                </div>
-                <div style="padding: 10px;">
-                    ${renderAdvancedStatsTab3(currentData3)}
-                </div>
-            </div>
-        `;
+    if (settings.exprtOnlyPeriodsTab3) {
+        exprtOnlyPeriods3 = settings.exprtOnlyPeriodsTab3;
+        localStorage.setItem("exprtOnlyPeriodsTab3", JSON.stringify(exprtOnlyPeriods3));
+        nextIdExprtOnly3 = exprtOnlyPeriods3.length > 0 ? Math.max(...exprtOnlyPeriods3.map(p => p.id)) + 1 : 1;
+    }
+    if (settings.excludeLines3) {
+        excludeLines3 = settings.excludeLines3;
+        localStorage.setItem("excludeLines3", JSON.stringify(excludeLines3));
     }
     
     // تبويب 4
-    if (currentData4.length > 0) {
-        html += `
-            <div style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden;">
-                <div style="background: #004085; color: white; padding: 10px 15px; font-weight: bold; font-size: 14px;">
-                    📦 تبويب 4: STRGE فارغ (MTY) (${currentData4.length} حاوية)
-                </div>
-                <div style="padding: 10px;">
-                    ${renderAdvancedStatsTab4(currentData4)}
-                </div>
-            </div>
-        `;
+    if (settings.emptyStrgePeriodsTab4) {
+        emptyStrgePeriods4 = settings.emptyStrgePeriodsTab4;
+        localStorage.setItem("emptyStrgePeriodsTab4", JSON.stringify(emptyStrgePeriods4));
+        nextIdEmptyStrge4 = emptyStrgePeriods4.length > 0 ? Math.max(...emptyStrgePeriods4.map(p => p.id)) + 1 : 1;
+    }
+    if (settings.excludeLines4) {
+        excludeLines4 = settings.excludeLines4;
+        localStorage.setItem("excludeLines4", JSON.stringify(excludeLines4));
     }
     
     // تبويب 5
-    if (currentData5.length > 0) {
-        html += `
-            <div style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden;">
-                <div style="background: #764ba2; color: white; padding: 10px 15px; font-weight: bold; font-size: 14px;">
-                    🚛 تبويب 5: TRSHP فقط (${currentData5.length} فترة)
-                </div>
-                <div style="padding: 10px;">
-                    ${renderAdvancedStatsTab5(currentData5)}
-                </div>
-            </div>
-        `;
+    if (settings.trshpOnlyPeriodsTab5) {
+        trshpOnlyPeriods5 = settings.trshpOnlyPeriodsTab5;
+        localStorage.setItem("trshpOnlyPeriodsTab5", JSON.stringify(trshpOnlyPeriods5));
+        nextIdTrshpOnly5 = trshpOnlyPeriods5.length > 0 ? Math.max(...trshpOnlyPeriods5.map(p => p.id)) + 1 : 1;
+    }
+    if (settings.excludeLines5) {
+        excludeLines5 = settings.excludeLines5;
+        localStorage.setItem("excludeLines5", JSON.stringify(excludeLines5));
     }
     
     // تبويب 6
-    if (currentData6.length > 0) {
-        html += `
-            <div style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden;">
-                <div style="background: #e67e22; color: white; padding: 10px 15px; font-weight: bold; font-size: 14px;">
-                    📦 تبويب 6: STRGE + EXPRT فقط (${currentData6.length} حاوية)
-                </div>
-                <div style="padding: 10px;">
-                    ${renderAdvancedStatsTab6(currentData6)}
-                </div>
-            </div>
-        `;
+    if (settings.strgePeriodsTab6) {
+        strgePeriods6 = settings.strgePeriodsTab6;
+        localStorage.setItem("strgePeriodsTab6", JSON.stringify(strgePeriods6));
+        nextIdStrge6 = strgePeriods6.length > 0 ? Math.max(...strgePeriods6.map(p => p.id)) + 1 : 1;
+    }
+    if (settings.exprtPeriodsTab6) {
+        exprtPeriods6 = settings.exprtPeriodsTab6;
+        localStorage.setItem("exprtPeriodsTab6", JSON.stringify(exprtPeriods6));
+        nextIdExprt6 = exprtPeriods6.length > 0 ? Math.max(...exprtPeriods6.map(p => p.id)) + 1 : 1;
+    }
+    if (settings.excludeLines6) {
+        excludeLines6 = settings.excludeLines6;
+        localStorage.setItem("excludeLines6", JSON.stringify(excludeLines6));
     }
     
     // تبويب 7
-    if (currentData7.length > 0) {
-        html += `
-            <div style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden;">
-                <div style="background: #c0392b; color: white; padding: 10px 15px; font-weight: bold; font-size: 14px;">
-                    📥 تبويب 7: IMPRT + FORWARD (${currentData7.length} حاوية)
-                </div>
-                <div style="padding: 10px;">
-                    ${renderAdvancedStatsTab7(currentData7)}
-                </div>
-            </div>
-        `;
+    if (settings.imprtForwardPeriodsTab7) {
+        imprtForwardPeriods7 = settings.imprtForwardPeriodsTab7;
+        localStorage.setItem("imprtForwardPeriodsTab7", JSON.stringify(imprtForwardPeriods7));
+        nextIdImprtForward7 = imprtForwardPeriods7.length > 0 ? Math.max(...imprtForwardPeriods7.map(p => p.id)) + 1 : 1;
+    }
+    if (settings.excludeLines7) {
+        excludeLines7 = settings.excludeLines7;
+        localStorage.setItem("excludeLines7", JSON.stringify(excludeLines7));
     }
     
-    html += '</div>';
-    container.innerHTML = html;
+    // تفضيلات الأعمدة
+    if (settings.selectedColumns) {
+        for (let key in settings.selectedColumns) {
+            selectedColumns[key] = settings.selectedColumns[key];
+            localStorage.setItem(`selectedColumns_${key}`, JSON.stringify(selectedColumns[key]));
+        }
+    }
+    
+    // تحديث واجهة المستخدم
+    initializeAllSelects();
+    refreshPeriodsDisplay('1');
+    refreshPeriodsDisplay('2');
+    refreshPeriodsDisplay('3');
+    refreshPeriodsDisplay('4');
+    refreshPeriodsDisplay('5');
+    refreshPeriodsDisplay('6');
+    refreshPeriodsDisplay('7');
+    displayExcludeList('excludeList1', excludeLines1, '1');
+    displayExcludeList('excludeList2', excludeLines2, '2');
+    displayExcludeList('excludeList3', excludeLines3, '3');
+    displayExcludeList('excludeList4', excludeLines4, '4');
+    displayExcludeList('excludeList5', excludeLines5, '5');
+    displayExcludeList('excludeList6', excludeLines6, '6');
+    displayExcludeList('excludeList7', excludeLines7, '7');
+    
+    // إعادة معالجة البيانات إذا كان هناك ملف محمل
+    if (containersMap.size > 0) {
+        processAndDisplay1();
+        processAndDisplay2();
+        processAndDisplay3();
+        processAndDisplay4();
+        processAndDisplay5();
+        processAndDisplay6();
+        processAndDisplay7();
+    }
+    
+	// بعد تحديث واجهة المستخدم
+applyColumnPreferencesFromGitHub();
+    console.log('✅ [GitHub] تم تطبيق الإعدادات بنجاح');
 }
 
-// ================================================
-// طباعة Dashboard الحالي
-// ================================================
-// ================================================
-// طباعة Dashboard
-// ================================================
-function printDashboard() {
-    let container = document.getElementById("dashboardContainer");
-    if (!container || container.innerHTML.includes("يرجى تحميل ملف Excel")) {
-        alert("⚠️ لا توجد بيانات للطباعة");
-        return;
-    }
-    
-    let printWindow = window.open('', '_blank', 'width=1200,height=800');
-    if (!printWindow) {
-        alert("الرجاء السماح للنوافذ المنبثقة");
-        return;
-    }
-    
-    let currentDate = new Date().toLocaleString('ar-EG');
-    
-    printWindow.document.write(`
-        <!DOCTYPE html>
-        <html dir="rtl">
-        <head>
-            <meta charset="UTF-8">
-            <title>لوحة التحكم الشاملة</title>
-            <style>
-                * { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; box-sizing: border-box; }
-                body { padding: 20px; margin: 0; background: white; direction: rtl; }
-                .header { text-align: center; border-bottom: 3px solid #0a3d62; padding-bottom: 10px; margin-bottom: 20px; }
-                .header h1 { color: #0a3d62; margin: 0; font-size: 22px; }
-                .header p { color: #6c757d; margin: 5px 0 0; font-size: 13px; }
-                .date { text-align: left; font-size: 11px; color: #6c757d; margin-bottom: 15px; }
-                .section { margin-bottom: 25px; page-break-inside: avoid; }
-                .section-title { background: #0a3d62; color: white; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 13px; margin-bottom: 10px; }
-                .stats-grid { display: flex; gap: 10px; flex-wrap: wrap; }
-                .stat-card { flex: 1; min-width: 120px; border-radius: 8px; padding: 10px 15px; text-align: center; color: white; }
-                .stat-card .number { font-size: 24px; font-weight: bold; }
-                .stat-card .label { font-size: 11px; opacity: 0.9; }
-                .stat-card .details { font-size: 10px; margin-top: 5px; padding-top: 5px; border-top: 1px solid rgba(255,255,255,0.3); }
-                .bg-purple { background: linear-gradient(135deg, #667eea, #764ba2); }
-                .bg-pink { background: linear-gradient(135deg, #f093fb, #f5576c); }
-                .bg-blue { background: linear-gradient(135deg, #4facfe, #00f2fe); }
-                .bg-green { background: linear-gradient(135deg, #43e97b, #38f9d7); }
-                .bg-orange { background: linear-gradient(135deg, #ffa07a, #ff6b6b); }
-                .bg-dark { background: linear-gradient(135deg, #0a3d62, #1e6f5c); }
-                .signatures { display: flex; justify-content: space-between; margin-top: 30px; padding-top: 15px; border-top: 2px solid #0a3d62; }
-                .signatures > div { text-align: center; flex: 1; }
-                .signatures > div > div:first-child { height: 40px; border-bottom: 1px solid #000; margin-bottom: 5px; }
-                .footer { margin-top: 15px; text-align: center; font-size: 10px; color: #6c757d; }
-                @media print { body { padding: 10px; } }
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <h1>📊 لوحة التحكم الشاملة</h1>
-                <p>تقرير أيام التخزين - ملخص جميع التبويبات</p>
-            </div>
-            <div class="date">📅 تاريخ الطباعة: ${currentDate}</div>
-            <div id="printContent">${container.innerHTML}</div>
-            <div class="signatures">
-                <div><div></div><strong>التوقيع</strong><div style="margin-top:5px; font-size:11px;">مدير العمليات</div></div>
-                <div><div></div><strong>التوقيع</strong><div style="margin-top:5px; font-size:11px;">مدقق المستندات</div></div>
-                <div><div></div><strong>التوقيع</strong><div style="margin-top:5px; font-size:11px;">مسؤول الخط</div></div>
-            </div>
-            <div class="footer">تم إنشاؤه بواسطة نظام التخزين - تقرير تلقائي</div>
-            <script>window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); };<\/script>
-        </body>
-        </html>
-    `);
-    printWindow.document.close();
-}
+// ===== استدعاء التحميل عند فتح الصفحة =====
+// هذا السطر سيتم تنفيذه بعد تحميل الصفحة بالكامل
+document.addEventListener("DOMContentLoaded", function() {
+    // تأخير بسيط لضمان جاهزية كل شيء
+    setTimeout(loadSettingsFromGitHub, 500);
+});
 
-// ================================================
-// تصدير Dashboard إلى Excel
-// ================================================
-function exportDashboardExcel() {
-    let container = document.getElementById("dashboardContainer");
-    if (!container || container.innerHTML.includes("يرجى تحميل ملف Excel")) {
-        alert("⚠️ لا توجد بيانات للتصدير");
-        return;
+// ============================================================
+// ===== دالة تطبيق تفضيلات الأعمدة من GitHub =====
+// ============================================================
+function applyColumnPreferencesFromGitHub() {
+    try {
+        // التحقق من وجود تفضيلات الأعمدة في selectedColumns
+        if (!selectedColumns || Object.keys(selectedColumns).length === 0) {
+            console.log('⚠️ لا توجد تفضيلات أعمدة للتحميل');
+            return;
+        }
+        
+        // تطبيق التفضيلات على كل تبويب
+        for (let tab in selectedColumns) {
+            let tabNumber = tab.replace('tab', '');
+            let columns = selectedColumns[tab];
+            
+            if (!columns || columns.length === 0) continue;
+            
+            // حفظ التفضيلات في localStorage
+            localStorage.setItem(`selectedColumns_${tab}`, JSON.stringify(columns));
+            
+            console.log(`✅ تم تطبيق تفضيلات الأعمدة للتبويب ${tabNumber}:`, columns.length, 'عمود');
+        }
+        
+        // إعادة عرض الجداول مع الأعمدة المختارة
+        setTimeout(function() {
+            applySavedColumnPreferences();
+        }, 200);
+        
+    } catch (error) {
+        console.warn('⚠️ فشل تطبيق تفضيلات الأعمدة:', error);
     }
-    
-    // تجميع جميع البيانات من جميع التبويبات
-    let allData = [];
-    
-    if (currentData1.length > 0) {
-        allData.push({ "التبويب": "TRSHP + EXPRT", "عدد الحاويات": currentData1.length, "إجمالي TRSHP": currentData1.reduce((s, i) => s + (i["TRSHP Net"] || 0), 0), "إجمالي EXPRT": currentData1.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0) });
-    }
-    if (currentData2.length > 0) {
-        allData.push({ "التبويب": "STRGE + EXPRT + IMPRT", "عدد الحاويات": currentData2.length, "إجمالي STRGE": currentData2.reduce((s, i) => s + (i["STRGE Net"] || 0), 0), "إجمالي EXPRT": currentData2.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0) });
-    }
-    if (currentData3.length > 0) {
-        allData.push({ "التبويب": "EXPRT فقط", "عدد الحاويات": currentData3.length, "إجمالي EXPRT": currentData3.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0) });
-    }
-    if (currentData4.length > 0) {
-        allData.push({ "التبويب": "STRGE فارغ (MTY)", "عدد الحاويات": currentData4.length, "إجمالي STRGE": currentData4.reduce((s, i) => s + (i["STRGE Net"] || 0), 0) });
-    }
-    if (currentData5.length > 0) {
-        allData.push({ "التبويب": "TRSHP فقط", "عدد الحاويات": currentData5.length, "إجمالي TRSHP": currentData5.reduce((s, i) => s + (i["TRSHP Net"] || 0), 0) });
-    }
-    if (currentData6.length > 0) {
-        allData.push({ "التبويب": "STRGE + EXPRT فقط", "عدد الحاويات": currentData6.length, "إجمالي STRGE": currentData6.reduce((s, i) => s + (i["STRGE Net"] || 0), 0), "إجمالي EXPRT": currentData6.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0) });
-    }
-    if (currentData7.length > 0) {
-        allData.push({ "التبويب": "IMPRT + FORWARD", "عدد الحاويات": currentData7.length, "إجمالي Net": currentData7.reduce((s, i) => s + (i["Net"] || 0), 0) });
-    }
-    
-    if (allData.length === 0) {
-        alert("⚠️ لا توجد بيانات للتصدير");
-        return;
-    }
-    
-    let ws = XLSX.utils.json_to_sheet(allData);
-    let wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Dashboard");
-    XLSX.writeFile(wb, `Dashboard_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.xlsx`);
 }

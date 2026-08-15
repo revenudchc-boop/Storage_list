@@ -244,7 +244,6 @@
 </div>
 
     <div class="tabs">
-		<button class="tab-btn" data-tab="tab8">📊 Dashboard</button>
         <button class="tab-btn active" data-tab="tab1">📋 TRSHP + EXPRT</button>
         <button class="tab-btn" data-tab="tab2">📦 STRGE + EXPRT + IMPRT</button>
         <button class="tab-btn" data-tab="tab3">📤 EXPRT فقط</button>
@@ -252,7 +251,6 @@
 		<button class="tab-btn" data-tab="tab5">🚛 TRSHP فقط</button>
 		<button class="tab-btn" data-tab="tab6">📦 STRGE + EXPRT فقط</button>
 		<button class="tab-btn" data-tab="tab7">📥 IMPRT + FORWARD</button>  <!-- ← أضف هذا -->
-		
 
     </div>
 
@@ -736,30 +734,6 @@
     </div>
 </div>
 
-<!-- تبويب 8: Dashboard شامل -->
-<div id="tab8" class="tab-content">
-    <div style="padding: 20px 25px 0 25px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
-        <div>
-            <h2 style="color: #0a3d62; margin-top: 0;">📊 لوحة التحكم الشاملة</h2>
-            <p style="color: #6c757d; margin: 0;">ملخص إحصائيات جميع التبويبات في صفحة واحدة</p>
-        </div>
-        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-            <button onclick="printDashboard()" class="print-btn" style="background:#0a3d62; color:white; border:none; padding:8px 20px; border-radius:30px; cursor:pointer; font-weight:bold; font-size:13px; transition:0.3s;">
-                🖨️ طباعة
-            </button>
-            <button onclick="exportDashboardExcel()" class="export-btn" style="background:#28a745; color:white; border:none; padding:8px 20px; border-radius:30px; cursor:pointer; font-weight:bold; font-size:13px; transition:0.3s;">
-                📎 تصدير Excel
-            </button>
-        </div>
-    </div>
-    
-    <div id="dashboardContainer" style="padding: 0 25px 25px 25px;">
-        <div style="text-align:center; padding:50px; color:#6c757d;">
-            📂 يرجى تحميل ملف Excel لعرض الإحصائيات
-        </div>
-    </div>
-</div>
-
 <!-- ===== تبويب 7: IMPRT + FORWARD (مستقل) ===== -->
 <div id="tab7" class="tab-content">
     <div style="text-align: left; padding: 15px 25px 0 25px;">
@@ -833,8 +807,6 @@
 </table>
     </div>
 </div>
-
-
 
 
     <div class="footer" id="footerMsg"></div>
