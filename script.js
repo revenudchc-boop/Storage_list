@@ -4435,11 +4435,11 @@ let hasMultiplePeriods = (sortedPeriods.length > 1);
 // netDays موجود من الأعلى
 
 let freightKind = period.rawData["Freight Kind"] || "";
-
+let orderNumber = period.rawData["Order Number"] || "";
 // إذا كانت RF و Freight Kind = MTY و Is Refrigerated = false و netDays <= 0 → لا تظهر
 let isInvalidRF = (type === "RF" && freightKind === "MTY" && isRefrigerated === "false" && netDays <= 0);
 
-let shouldShow = (type === "RF" && !isInvalidRF) || hasMultiplePeriods || (type === "GP" && netDays > 0);
+let shouldShow = (type === "RF" && !isInvalidRF) || hasMultiplePeriods || (type === "GP" && netDays > 0) || (netDays === 0 && orderNumber && orderNumber.trim() !== "");
 // ===================================================
 // ===================================================
     // =====================================
