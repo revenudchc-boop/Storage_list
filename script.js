@@ -4467,7 +4467,7 @@ let shouldShow = (type === "RF" && !isInvalidRF) || hasMultiplePeriods || (type 
             "TRSHP Free": freeDays,   // السماح الكلي من الإعدادات
             "TRSHP Net": netDays,
             "Total Net": netDays,
-            "Vessel Name": period.vesselName,
+            "Vessel Name": (orderNumber && orderNumber.trim() !== "") ? orderNumber : period.vesselName,
             "O/B Carrier Name": period.obCarrierName,
             "O/B Carrier ATD": period.obCarrierATD,
             "Period Order": i + 1,
