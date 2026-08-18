@@ -4461,13 +4461,14 @@ let shouldShow = (type === "RF" && !isInvalidRF) || hasMultiplePeriods || (type 
             "طريقة الحساب": method,
             "Flex String 01": period.flexString01,
             "flex_04": period.flexString04,
+			"Order Number": orderNumber,  // ← تأكد من وجود هذا السطر
             "TRSHP Start": period.start,
             "TRSHP End": period.end,
             "TRSHP Days": days,
             "TRSHP Free": freeDays,   // السماح الكلي من الإعدادات
             "TRSHP Net": netDays,
             "Total Net": netDays,
-            "Vessel Name": (orderNumber && orderNumber.trim() !== "") ? orderNumber : period.vesselName,
+            "Vessel Name": period.vesselName,
             "O/B Carrier Name": period.obCarrierName,
             "O/B Carrier ATD": period.obCarrierATD,
             "Period Order": i + 1,
@@ -6356,11 +6357,13 @@ if (tabId === '5') {
         
         // البحث عن فترة O/B Loc Type = VESSEL (السفينة)
         let vesselData = null;
+        let orderNumber = "";
         
         for (let tr of trshpArray) {
             let locType = tr["O/B Loc Type"] || "";  // ← التصحيح هنا: O/B Loc Type
             if (locType === "VESSEL") {
                 vesselData = tr;
+                orderNumber = tr["Order Number"] || "";  // ← الحصول على Order Number
                 break;
             }
         }
@@ -6369,7 +6372,12 @@ if (tabId === '5') {
         if (vesselData) {
             // O/B Carrier Name (اسم السفينة)
             if (carrierName === "—") {
-                carrierName = vesselData["O/B Carrier Name"] || vesselData["I/B Carrier Name"] || "—";
+                // ===== التعديل: إذا كان Order Number موجود، استخدمه بدلاً من اسم السفينة =====
+                if (orderNumber && orderNumber.trim() !== "") {
+                    carrierName = orderNumber;
+                } else {
+                    carrierName = vesselData["O/B Carrier Name"] || vesselData["I/B Carrier Name"] || "—";
+                }
             }
             
             // O/B Carrier ATD (تاريخ الشحن) - من سطر VESSEL فقط
@@ -6395,7 +6403,13 @@ if (tabId === '5') {
     if (carrierName === "—") {
         for (let item of displayData) {
             if (carrierName === "—") {
-                carrierName = item["Vessel Name"] || "—";
+                // ===== التعديل: إذا كان Order Number موجود، استخدمه =====
+                let orderNum = item["Order Number"] || "";
+                if (orderNum && orderNum.trim() !== "") {
+                    carrierName = orderNum;
+                } else {
+                    carrierName = item["Vessel Name"] || "—";
+                }
             }
             let lineId = item["Line ID"];
             if (lineId && lineId !== "") {
