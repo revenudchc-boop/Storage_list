@@ -9932,12 +9932,8 @@ function generateInteractiveConsolidatedReport() {
                     let containers = [];
                     
                     if (colKey) {
-                        // حاويات العمود المحدد فقط
-                        if (details[colKey]) {
-                            containers = details[colKey];
-                        }
+                        if (details[colKey]) containers = details[colKey];
                     } else {
-                        // كل الحاويات في كل الأعمدة
                         for (let ck in details) {
                             containers = containers.concat(details[ck].map(c => Object.assign({}, c, { "_colKey": ck })));
                         }
@@ -9948,8 +9944,7 @@ function generateInteractiveConsolidatedReport() {
                         return;
                     }
                     
-                    // فتح نافذة مستقلة للتفاصيل
-                    let detailWin = window.open('', '_blank', 'width=1400,height=800,scrollbars=yes');
+                    let detailWin = window.open('', '_blank', 'width=1500,height=900,scrollbars=yes');
                     if (!detailWin) {
                         alert("الرجاء السماح للنوافذ المنبثقة.");
                         return;
@@ -9957,98 +9952,189 @@ function generateInteractiveConsolidatedReport() {
                     
                     let colLabel = colKey ? (columns.find(c => c.key === colKey) || {}).label || colKey : "الكل";
                     
-                    let rowsHtml = containers.map((c, i) => \`
-                        <tr>
-                            <td>\${i + 1}</td>
-                            <td style="font-weight:bold;">\${c["Container No."] || "—"}</td>
-                            <td>\${c["Line ID"] || "—"}</td>
-                            <td>\${c["Size"] || "—"}</td>
-                            <td>\${c["Type"] || "—"}</td>
-                            <td>\${c["Category"] || "—"}</td>
-                            <td>\${c["Dray Status"] || "—"}</td>
-                            <td>\${c["Flex String 01"] || "—"}</td>
-                            <td>\${c["Is Refrigerated"] === "true" ? "❄️" : "—"}</td>
-                            <td>\${c["Is OOG"] === "true" ? "📐" : "—"}</td>
-                            <td>\${c["Is Hazardous"] === "true" ? "⚠️" : "—"}</td>
-                            <td>\${c["IMDG Class"] || "—"}</td>
-                            <td>\${c["Start"] || "—"}</td>
-                            <td>\${c["End"] || "—"}</td>
-                            <td style="background:#e3f2fd;">\${c["Days"] || 0}</td>
-                            <td style="background:#fff3cd;">\${c["Free"] || 0}</td>
-                            <td style="background:#d4edda; font-weight:bold;">\${c["Net"] || 0}</td>
-                            <td>\${c["Vessel Name"] || "—"}</td>
-                        </tr>
-                    \`).join('');
+                    // ===== بناء صفوف الجدول =====
+                    let rowsHtml = '';
+                    for (let i = 0; i < containers.length; i++) {
+                        let c = containers[i];
+                        rowsHtml += '<tr>';
+                        rowsHtml += '<td>' + (i + 1) + '</td>';
+                        rowsHtml += '<td style="font-weight:bold;">' + (c["Container No."] || "—") + '</td>';
+                        rowsHtml += '<td>' + (c["Line ID"] || "—") + '</td>';
+                        rowsHtml += '<td>' + (c["Size"] || "—") + '</td>';
+                        rowsHtml += '<td>' + (c["Type"] || "—") + '</td>';
+                        rowsHtml += '<td>' + (c["Category"] || "—") + '</td>';
+                        rowsHtml += '<td>' + (c["Dray Status"] || "—") + '</td>';
+                        rowsHtml += '<td>' + (c["Flex String 01"] || "—") + '</td>';
+                        rowsHtml += '<td>' + (c["Is Refrigerated"] === "true" ? "❄️" : "—") + '</td>';
+                        rowsHtml += '<td>' + (c["Is OOG"] === "true" ? "📐" : "—") + '</td>';
+                        rowsHtml += '<td>' + (c["Is Hazardous"] === "true" ? "⚠️" : "—") + '</td>';
+                        rowsHtml += '<td>' + (c["IMDG Class"] || "—") + '</td>';
+                        rowsHtml += '<td>' + (c["Start"] || "—") + '</td>';
+                        rowsHtml += '<td>' + (c["End"] || "—") + '</td>';
+                        rowsHtml += '<td style="background:#e3f2fd;">' + (c["Days"] || 0) + '</td>';
+                        rowsHtml += '<td style="background:#fff3cd;">' + (c["Free"] || 0) + '</td>';
+                        rowsHtml += '<td style="background:#d4edda;font-weight:bold;">' + (c["Net"] || 0) + '</td>';
+                        rowsHtml += '<td>' + (c["Vessel Name"] || "—") + '</td>';
+                        rowsHtml += '</tr>';
+                    }
                     
-                    let detailHtml = \`
-                        <!DOCTYPE html>
-                        <html dir="rtl">
-                        <head>
-                            <meta charset="UTF-8">
-                            <title>تفاصيل: \${row.label}</title>
-                            <style>
-                                * { font-family: 'Segoe UI', Tahoma, sans-serif; box-sizing: border-box; }
-                                body { background: #f0f2f5; padding: 20px; direction: rtl; margin: 0; }
-                                .container { max-width: 100%; margin: auto; background: white; border-radius: 16px; box-shadow: 0 8px 20px rgba(0,0,0,0.1); padding: 25px; }
-                                .header { text-align: center; padding-bottom: 15px; border-bottom: 2px solid #0a3d62; margin-bottom: 20px; }
-                                .header h1 { color: #0a3d62; font-size: 22px; margin: 0; }
-                                .header .sub { color: #666; font-size: 14px; margin-top: 8px; }
-                                .info-badge { display: inline-block; background: #e3f2fd; color: #0d47a1; padding: 6px 15px; border-radius: 20px; margin: 5px; font-size: 13px; font-weight: bold; }
-                                table { width: 100%; border-collapse: collapse; font-size: 11px; }
-                                th { background: #0a3d62; color: white; padding: 8px 4px; position: sticky; top: 0; }
-                                td { padding: 6px 4px; border-bottom: 1px solid #e9ecef; text-align: center; }
-                                tr:hover { background: #f1f3f5; }
-                                tr:nth-child(even) { background: #fafbfc; }
-                                .print-btn { position: fixed; top: 20px; right: 20px; padding: 10px 24px; background: #0a3d62; color: white; border: none; border-radius: 30px; font-weight: bold; cursor: pointer; }
-                                .close-btn { position: fixed; top: 20px; right: 160px; padding: 10px 24px; background: #dc3545; color: white; border: none; border-radius: 30px; font-weight: bold; cursor: pointer; }
-                                @media print { .print-btn, .close-btn { display: none; } body { background: white; } }
-                            </style>
-                        </head>
-                        <body>
-                            <button class="print-btn" onclick="window.print()">🖨️ طباعة</button>
-                            <button class="close-btn" onclick="window.close()">✖ إغلاق</button>
-                            <div class="container">
-                                <div class="header">
-                                    <h1>📋 تفاصيل الحاويات</h1>
-                                    <div class="sub">\${row.label}</div>
-                                    <div style="margin-top:10px;">
-                                        <span class="info-badge">العمود: \${colLabel}</span>
-                                        <span class="info-badge">عدد الحاويات: \${containers.length}</span>
-                                        <span class="info-badge">إجمالي الأيام: \${containers.reduce((s, c) => s + (parseFloat(c["Net"]) || 0), 0)}</span>
-                                    </div>
-                                </div>
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th>#</th>
-                                            <th>Container No.</th>
-                                            <th>Line</th>
-                                            <th>Size</th>
-                                            <th>Type</th>
-                                            <th>Category</th>
-                                            <th>Dray Status</th>
-                                            <th>Flex 01</th>
-                                            <th>RF</th>
-                                            <th>OOG</th>
-                                            <th>Hazard</th>
-                                            <th>IMDG</th>
-                                            <th>Start</th>
-                                            <th>End</th>
-                                            <th>Days</th>
-                                            <th>Free</th>
-                                            <th>Net</th>
-                                            <th>Vessel</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>\${rowsHtml}</tbody>
-                                </table>
-                            </div>
-                        </body>
-                        </html>
-                    \`;
+                    // ===== بناء HTML (بدون أي script tag) =====
+                    let innerDocHtml = '';
+                    innerDocHtml += '<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8"><title>Details</title>';
+                    innerDocHtml += '<style>';
+                    innerDocHtml += '*{font-family:Segoe UI,Tahoma,sans-serif;box-sizing:border-box}';
+                    innerDocHtml += 'body{background:#f0f2f5;padding:20px;direction:rtl;margin:0}';
+                    innerDocHtml += '.container{max-width:100%;margin:auto;background:white;border-radius:16px;box-shadow:0 8px 20px rgba(0,0,0,.1);padding:25px}';
+                    innerDocHtml += '.header{text-align:center;padding-bottom:15px;border-bottom:2px solid #0a3d62;margin-bottom:20px}';
+                    innerDocHtml += '.header h1{color:#0a3d62;font-size:22px;margin:0}';
+                    innerDocHtml += '.header .sub{color:#666;font-size:14px;margin-top:8px}';
+                    innerDocHtml += '.info-badge{display:inline-block;background:#e3f2fd;color:#0d47a1;padding:6px 15px;border-radius:20px;margin:5px;font-size:13px;font-weight:bold}';
+                    innerDocHtml += '.toolbar{background:#f8f9fa;padding:15px;border-radius:10px;margin-bottom:20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}';
+                    innerDocHtml += '.toolbar button{padding:10px 20px;border:none;border-radius:8px;font-weight:bold;cursor:pointer;font-size:14px}';
+                    innerDocHtml += '.btn-upload{background:#17a2b8;color:white}';
+                    innerDocHtml += '.btn-compare{background:#28a745;color:white}';
+                    innerDocHtml += '.btn-compare:disabled{background:#ccc;cursor:not-allowed}';
+                    innerDocHtml += '.btn-reset{background:#6c757d;color:white}';
+                    innerDocHtml += '.file-info{background:#d4edda;color:#155724;padding:8px 15px;border-radius:8px;font-size:13px;font-weight:bold;display:none}';
+                    innerDocHtml += 'table{width:100%;border-collapse:collapse;font-size:11px}';
+                    innerDocHtml += 'th{background:#0a3d62;color:white;padding:8px 4px}';
+                    innerDocHtml += 'td{padding:6px 4px;border-bottom:1px solid #e9ecef;text-align:center}';
+                    innerDocHtml += 'tr:hover{background:#f1f3f5}';
+                    innerDocHtml += '.diff-row{background:#fff5f5}';
+                    innerDocHtml += '.diff-positive{color:#dc3545;font-weight:bold}';
+                    innerDocHtml += '.diff-negative{color:#fd7e14;font-weight:bold}';
+                    innerDocHtml += '.print-btn{position:fixed;top:20px;right:20px;padding:10px 24px;background:#0a3d62;color:white;border:none;border-radius:30px;font-weight:bold;cursor:pointer}';
+                    innerDocHtml += '.close-btn{position:fixed;top:20px;right:160px;padding:10px 24px;background:#dc3545;color:white;border:none;border-radius:30px;font-weight:bold;cursor:pointer}';
+                    innerDocHtml += '.section-title{font-size:16px;color:#0a3d62;margin:20px 0 10px 0;padding-bottom:8px;border-bottom:2px solid #0a3d62;font-weight:bold}';
+                    innerDocHtml += '.summary{display:flex;gap:15px;margin-bottom:15px;flex-wrap:wrap}';
+                    innerDocHtml += '.summary-card{flex:1;min-width:130px;padding:15px;border-radius:10px;text-align:center;color:white}';
+                    innerDocHtml += '.summary-card .num{font-size:24px;font-weight:bold;margin:5px 0}';
+                    innerDocHtml += '.summary-card .lbl{font-size:12px;opacity:.9}';
+                    innerDocHtml += '@media print{.print-btn,.close-btn,.toolbar{display:none}body{background:white}}';
+                    innerDocHtml += '</style></head><body>';
+                    innerDocHtml += '<button class="print-btn" id="printBtn">🖨️ طباعة</button>';
+                    innerDocHtml += '<button class="close-btn" id="closeBtn">✖ إغلاق</button>';
+                    innerDocHtml += '<div class="container">';
+                    innerDocHtml += '<div class="header">';
+                    innerDocHtml += '<h1>📋 تفاصيل الحاويات - مقارنة مع ملف الفواتير</h1>';
+                    innerDocHtml += '<div class="sub">' + row.label + '</div>';
+                    innerDocHtml += '<div style="margin-top:10px;">';
+                    innerDocHtml += '<span class="info-badge">العمود: ' + colLabel + '</span>';
+                    innerDocHtml += '<span class="info-badge">عدد الحاويات: ' + containers.length + '</span>';
+                    innerDocHtml += '</div></div>';
+                    innerDocHtml += '<div class="toolbar">';
+                    innerDocHtml += '<input type="file" id="compareFileInput" accept=".xls,.xlsx" style="display:none">';
+                    innerDocHtml += '<button class="btn-upload" id="uploadBtn">📂 تحميل ملف المقارنة</button>';
+                    innerDocHtml += '<span class="file-info" id="fileInfo"></span>';
+                    innerDocHtml += '<button class="btn-compare" id="compareBtn" disabled>🔍 مقارنة</button>';
+                    innerDocHtml += '<button class="btn-reset" id="resetBtn">🔄 إعادة تعيين</button>';
+                    innerDocHtml += '</div>';
+                    innerDocHtml += '<div id="compareResults" style="display:none">';
+                    innerDocHtml += '<div class="section-title">📊 نتائج المقارنة (الحاويات التي بها فرق فقط)</div>';
+                    innerDocHtml += '<div class="summary" id="compareSummary"></div>';
+                    innerDocHtml += '<div id="compareTableContainer"></div>';
+                    innerDocHtml += '</div>';
+                    innerDocHtml += '<div class="section-title">📋 تفاصيل الحاويات الأصلية</div>';
+                    innerDocHtml += '<div style="overflow-x:auto"><table><thead><tr>';
+                    innerDocHtml += '<th>#</th><th>Container No.</th><th>Line</th><th>Size</th><th>Type</th><th>Category</th><th>Dray Status</th><th>Flex 01</th><th>RF</th><th>OOG</th><th>Hazard</th><th>IMDG</th><th>Start</th><th>End</th><th>Days</th><th>Free</th><th>Net</th><th>Vessel</th>';
+                    innerDocHtml += '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div>';
+                    innerDocHtml += '</div></body></html>';
                     
-                    detailWin.document.write(detailHtml);
+                    detailWin.document.write(innerDocHtml);
                     detailWin.document.close();
+                    
+                    // ===== تحميل XLSX ديناميكياً =====
+                    let xlsxScript = detailWin.document.createElement('script');
+                    xlsxScript.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+                    detailWin.document.head.appendChild(xlsxScript);
+                    
+                    // ===== ربط الأحداث =====
+                    let billingData = null;
+                    
+                    detailWin.document.getElementById('printBtn').onclick = function() { detailWin.print(); };
+                    detailWin.document.getElementById('closeBtn').onclick = function() { detailWin.close(); };
+                    detailWin.document.getElementById('uploadBtn').onclick = function() {
+                        detailWin.document.getElementById('compareFileInput').click();
+                    };
+                    
+                    detailWin.document.getElementById('compareFileInput').onchange = function(e) {
+                        let file = e.target.files[0];
+                        if (!file) return;
+                        
+                        // التحقق من تحميل XLSX
+                        if (typeof detailWin.XLSX === 'undefined') {
+                            alert('⏳ جاري تحميل مكتبة XLSX، يرجى المحاولة بعد لحظات');
+                            return;
+                        }
+                        
+                        let reader = new FileReader();
+                        reader.onload = function(evt) {
+                            try {
+                                let data = new Uint8Array(evt.target.result);
+                                let wb = detailWin.XLSX.read(data, { type: 'array' });
+                                let sheet = wb.Sheets[wb.SheetNames[0]];
+                                let fileRows = detailWin.XLSX.utils.sheet_to_json(sheet, { defval: '', range: 4 });
+                                billingData = window.opener.buildBillingMap(fileRows, 'STORAGE');
+                                
+                                let fi = detailWin.document.getElementById('fileInfo');
+                                fi.style.display = 'inline-block';
+                                fi.textContent = '📄 ' + file.name + ' (' + Object.keys(billingData).length + ' حاوية)';
+                                detailWin.document.getElementById('compareBtn').disabled = false;
+                            } catch(err) {
+                                alert('خطأ: ' + err.message);
+                            }
+                        };
+                        reader.readAsArrayBuffer(file);
+                    };
+                    
+                    detailWin.document.getElementById('compareBtn').onclick = function() {
+                        if (!billingData) return;
+                        let result = window.opener.compareWithBillingFile(containers, billingData);
+                        
+                        let s = '';
+                        s += '<div class="summary-card" style="background:linear-gradient(135deg,#43e97b,#38f9d7)"><div class="lbl">✅ متطابقة</div><div class="num">' + result.matchCount + '</div></div>';
+                        s += '<div class="summary-card" style="background:linear-gradient(135deg,#f5576c,#f093fb)"><div class="lbl">❌ مختلفة</div><div class="num">' + result.diffCount + '</div></div>';
+                        s += '<div class="summary-card" style="background:linear-gradient(135deg,#ffc107,#ff9800)"><div class="lbl">⚠️ في البرنامج فقط</div><div class="num">' + result.missingInBilling + '</div></div>';
+                        s += '<div class="summary-card" style="background:linear-gradient(135deg,#0a3d62,#1a5a7a)"><div class="lbl">📌 إجمالي</div><div class="num">' + result.totalCompared + '</div></div>';
+                        detailWin.document.getElementById('compareSummary').innerHTML = s;
+                        
+                        let tableEl = detailWin.document.getElementById('compareTableContainer');
+                        if (result.diffResults.length === 0) {
+                            tableEl.innerHTML = '<div style="padding:30px;text-align:center;background:#d4edda;border-radius:10px;font-size:16px;font-weight:bold;color:#155724">✅ جميع الحاويات متطابقة!</div>';
+                        } else {
+                            let t = '<div style="overflow-x:auto"><table><thead><tr>';
+                            t += '<th>#</th><th>Container No.</th><th>Line</th><th>Size</th><th>Type</th><th>Reefer</th><th>أيام البرنامج</th><th>أيام الملف</th><th>الفرق</th><th>الحالة</th>';
+                            t += '</tr></thead><tbody>';
+                            for (let i = 0; i < result.diffResults.length; i++) {
+                                let r = result.diffResults[i];
+                                let dc = r.Difference > 0 ? 'diff-positive' : 'diff-negative';
+                                let ds = r.Difference > 0 ? '+' : '';
+                                t += '<tr class="diff-row">';
+                                t += '<td>' + (i+1) + '</td>';
+                                t += '<td style="font-weight:bold">' + r["Container No."] + '</td>';
+                                t += '<td>' + r["Line ID"] + '</td>';
+                                t += '<td>' + r["Size"] + '</td>';
+                                t += '<td>' + r["Type"] + '</td>';
+                                t += '<td>' + (r["Is Reefer"] ? '❄️' : '—') + '</td>';
+                                t += '<td style="background:#e3f2fd">' + r["Program Days"] + '</td>';
+                                t += '<td style="background:#fff3cd">' + r["Billing Days"] + '</td>';
+                                t += '<td class="' + dc + '">' + ds + r.Difference + '</td>';
+                                t += '<td>' + r.Status + '</td>';
+                                t += '</tr>';
+                            }
+                            t += '</tbody></table></div>';
+                            tableEl.innerHTML = t;
+                        }
+                        detailWin.document.getElementById('compareResults').style.display = 'block';
+                    };
+                    
+                    detailWin.document.getElementById('resetBtn').onclick = function() {
+                        billingData = null;
+                        detailWin.document.getElementById('compareFileInput').value = '';
+                        detailWin.document.getElementById('fileInfo').style.display = 'none';
+                        detailWin.document.getElementById('compareBtn').disabled = true;
+                        detailWin.document.getElementById('compareResults').style.display = 'none';
+                    };
                 }
             <\/script>
         </body>
@@ -10073,3 +10159,103 @@ document.addEventListener("DOMContentLoaded", function() {
         console.log("✅ تم ربط زر التقرير المجمع التفاعلي");
     }
 });
+
+// ============================================================
+// 🔧 دالة مستقلة: بناء خريطة الفواتير
+// ============================================================
+function buildBillingMap(rows, eventTypeFilter) {
+    eventTypeFilter = eventTypeFilter || "STORAGE";
+    let billingMap = {};
+    
+    for (let row of rows) {
+        let eventType = (row["Event Type ID"] || "").toString().trim().toUpperCase();
+        if (eventType !== eventTypeFilter.toUpperCase()) continue;
+        
+        let entityId = (row["Event Entity ID"] || "").toString().trim();
+        if (!entityId) continue;
+        
+        let qtyRaw = row["Quantity Billed"] || "0";
+        let qty = parseFloat(qtyRaw.toString().replace(/,/g, "").trim()) || 0;
+        
+        if (billingMap[entityId] === undefined) {
+            billingMap[entityId] = qty;
+        } else {
+            billingMap[entityId] += qty;
+        }
+    }
+    
+    console.log("✅ تم بناء خريطة الفواتير:", Object.keys(billingMap).length, "حاوية");
+    return billingMap;
+}
+
+// ============================================================
+// 🔍 دالة مستقلة: المقارنة
+// ============================================================
+function compareWithBillingFile(containers, billingData) {
+    let containerMap = {};
+    
+    for (let c of containers) {
+        let cno = c["Container No."];
+        if (!cno) continue;
+        
+        if (!containerMap[cno]) {
+            containerMap[cno] = {
+                "Container No.": cno,
+                "Line ID": c["Line ID"] || "",
+                "Size": c["Size"] || "",
+                "Type": c["Type"] || "",
+                "Is Reefer": false,
+                "Days": 0,
+                "Net": 0
+            };
+        }
+        
+        containerMap[cno]["Days"] += parseFloat(c["Days"]) || 0;
+        containerMap[cno]["Net"] += parseFloat(c["Net"]) || 0;
+        
+        if (c["Is Refrigerated"] === "true" || c["Is Refrigerated"] === true) {
+            containerMap[cno]["Is Reefer"] = true;
+        }
+    }
+    
+    let results = [];
+    let matchCount = 0, diffCount = 0, missingInBilling = 0;
+    
+    for (let cno in containerMap) {
+        let c = containerMap[cno];
+        let programValue = c["Is Reefer"] ? c["Days"] : c["Net"];
+        
+        if (programValue === 0) continue;
+        
+        let billingValue = billingData[cno];
+        let inBilling = billingValue !== undefined;
+        if (!inBilling) billingValue = 0;
+        
+        let diff = programValue - billingValue;
+        
+        if (!inBilling) missingInBilling++;
+        else if (diff === 0) matchCount++;
+        else diffCount++;
+        
+        results.push({
+            "Container No.": cno,
+            "Line ID": c["Line ID"],
+            "Size": c["Size"],
+            "Type": c["Type"],
+            "Is Reefer": c["Is Reefer"],
+            "Program Days": programValue,
+            "Billing Days": billingValue,
+            "Difference": diff,
+            "Status": !inBilling ? "غير موجود في الملف" : (diff === 0 ? "متطابق" : "مختلف")
+        });
+    }
+    
+    return {
+        results: results,
+        diffResults: results.filter(r => r.Status !== "متطابق"),
+        matchCount: matchCount,
+        diffCount: diffCount,
+        missingInBilling: missingInBilling,
+        totalCompared: results.length
+    };
+}
