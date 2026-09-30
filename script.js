@@ -1359,13 +1359,22 @@ function renderAdvancedStats(data) {
     // ========== باقي الإحصائيات ==========
     let refrigeratedContainers = validData.filter(i => i["Is Refrigerated"] === "true");
     let rfExprtDays = refrigeratedContainers.reduce((s, i) => s + (i["EXPRT Days"] || 0), 0);
-    let totalCount = validData.length;
-    
-    let size20Containers = validData.filter(i => i["Size"]?.toString().startsWith("2"));
-    let size40Containers = validData.filter(i => i["Size"]?.toString().startsWith("4"));
-    
-    let size20Count = size20Containers.length;
-    let size40Count = size40Containers.length;
+// ===== 🆕 عدّ الحاويات الفريدة بدلاً من الصفوف =====
+let uniqueContainerSet = new Set(validData.map(item => item["Container No."]));
+let totalCount = uniqueContainerSet.size;
+
+// احتفظ بالمصفوفات الأصلية (للتوافق مع باقي الكود)
+let size20Containers = validData.filter(i => (i["Size"] || "").toString().startsWith("2"));
+let size40Containers = validData.filter(i => {
+    let s = (i["Size"] || "").toString();
+    return s.startsWith("4") || s.startsWith("95");
+});
+
+// 🆕 استخدم Sets لحساب الحاويات الفريدة
+let size20Unique = new Set(size20Containers.map(i => i["Container No."]));
+let size40Unique = new Set(size40Containers.map(i => i["Container No."]));
+let size20Count = size20Unique.size;
+let size40Count = size40Unique.size;
     let size20TrshpNet = size20Containers.reduce((s, i) => s + (i["TRSHP Net"] || 0), 0);
     let size40TrshpNet = size40Containers.reduce((s, i) => s + (i["TRSHP Net"] || 0), 0);
     
@@ -1808,6 +1817,34 @@ document.getElementById("fileInput").addEventListener("change", function(e) {
     processExcelFile(file); // استدعاء الدالة المعدلة
 });
 
+// ============================================================
+// 🔧 دالة لحساب أيام TRSHP مع خصم اليوم المشترك بين الفترات المتتالية
+// ============================================================
+function getAdjustedTrshpDays(period, allPeriods) {
+    let start = convertDate(period["Start Time"] || "");
+    let end = convertDate(period["End Time"] || "");
+    let days = diffDays(start, end);
+    
+    if (!start || !end) return days;
+    
+    // هل توجد فترة أخرى تنتهي في نفس يوم بداية هذه الفترة؟
+    let sharedWithPrev = allPeriods.some(other => {
+        if (other === period) return false;
+        let otherEnd = convertDate(other["End Time"] || "");
+        // التحقق من أن الفترة الأخرى تختلف عن الحالية
+        let otherStart = convertDate(other["Start Time"] || "");
+        if (otherStart === start && otherEnd === end) return false;
+        return otherEnd === start;
+    });
+    
+    if (sharedWithPrev) {
+        days = days - 1;
+        if (days < 0) days = 0;
+    }
+    
+    return days;
+}
+
 function processAndDisplay1() {
     let result = [];
     
@@ -1891,31 +1928,32 @@ function processAndDisplay1() {
             }
         }
         
-        vesselPeriods.sort((a, b) => 
-            new Date(convertDate(b["Start Time"])) - new Date(convertDate(a["Start Time"]))
-        );
-        truckPeriods.sort((a, b) => 
-            new Date(convertDate(b["Start Time"])) - new Date(convertDate(a["Start Time"]))
-        );
+vesselPeriods.sort((a, b) => 
+    new Date(convertDate(a["Start Time"])) - new Date(convertDate(b["Start Time"]))
+);
+truckPeriods.sort((a, b) => 
+    new Date(convertDate(a["Start Time"])) - new Date(convertDate(b["Start Time"]))
+);
         
         let orderedForDeduction = [...vesselPeriods, ...truckPeriods];
         
         // ===================================================
         // بناء periodFreeMap لتوزيع السماح على فترات TRSHP
         // ===================================================
-        let remainingFree = totalFreeDays;
-        let periodFreeMap = new Map();
-        
-        for (let tr of orderedForDeduction) {
-            let trStart = convertDate(tr["Start Time"]);
-            let trEnd = convertDate(tr["End Time"]);
-            let trDays = diffDays(trStart, trEnd);
-            let key = trStart + "|" + trEnd;
-            
-            let deduction = Math.min(trDays, remainingFree);
-            periodFreeMap.set(key, deduction);
-            remainingFree -= deduction;
-        }
+let remainingFree = totalFreeDays;
+let periodFreeMap = new Map();
+
+for (let tr of orderedForDeduction) {
+    let trStart = convertDate(tr["Start Time"]);
+    let trEnd = convertDate(tr["End Time"]);
+    // 🆕 استخدام الدالة المعدلة لخصم اليوم المشترك
+    let trDays = getAdjustedTrshpDays(tr, trshpArray);
+    let key = trStart + "|" + trEnd;
+    
+    let deduction = Math.min(trDays, remainingFree);
+    periodFreeMap.set(key, deduction);
+    remainingFree -= deduction;
+}
         // ===================================================
         
         // ===================================================
@@ -1966,16 +2004,24 @@ function processAndDisplay1() {
         // ===================================================
         let remainingFreeTrshp = remainingFreeForTrshp;
         
-        for (let tr of trshpArray) {
-            let drayStatus = tr ? (tr["Dray Status"] || "") : "";
-            let isReturn = (drayStatus === "RETURN");
-            
-            if (isReturn) continue;
+// 🆕 ترتيب trshpArray تصاعدياً (الأقدم أولاً) قبل الحلقة
+let trshpArraySorted = [...trshpArray].sort((a, b) => {
+    let aDate = new Date(convertDate(a["Start Time"] || ""));
+    let bDate = new Date(convertDate(b["Start Time"] || ""));
+    return aDate - bDate;
+});
+
+for (let tr of trshpArraySorted) {
+    let drayStatus = tr ? (tr["Dray Status"] || "") : "";
+    let isReturn = (drayStatus === "RETURN");
+    
+    if (isReturn) continue;
             
             // حساب trDaysTotal لهذه الفترة
             let trStart = convertDate(tr["Start Time"] || "");
             let trEnd = convertDate(tr["End Time"] || "");
-            let trDaysTotal = diffDays(trStart, trEnd);
+            // 🆕 استخدام الأيام المعدلة (خصم اليوم المشترك)
+let trDaysTotal = getAdjustedTrshpDays(tr, trshpArray);
             
             // خصم السماح المتبقي من هذه الفترة
             let deduction = Math.min(trDaysTotal, remainingFreeTrshp);
@@ -4680,43 +4726,64 @@ function renderAdvancedStatsTab3(data) {
 
 function renderAdvancedStatsTab4(data) {
     let totalStrgeNet = data.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
-    let totalCount = data.length;
+    
+    // 🆕 عدّ الحاويات الفريدة بدلاً من الصفوف
+    let uniqueContainerSet = new Set(data.map(item => item["Container No."]));
+    let totalCount = uniqueContainerSet.size;
     
     // Flex String 01
     let flexTrueContainers = data.filter(i => i["Flex String 01"] === "TRUE");
     let flexTrueStrgeNet = flexTrueContainers.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
-    let flexTrueCount = flexTrueContainers.length;
+    // 🆕 العدد الفريد لـ Flex TRUE
+    let flexTrueUnique = new Set(flexTrueContainers.map(i => i["Container No."]));
+    let flexTrueCount = flexTrueUnique.size;
     
     let flexFalseContainers = data.filter(i => i["Flex String 01"] === "FALSE");
     let flexFalseStrgeNet = flexFalseContainers.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
-    let flexFalseCount = flexFalseContainers.length;
+    // 🆕 العدد الفريد لـ Flex FALSE
+    let flexFalseUnique = new Set(flexFalseContainers.map(i => i["Container No."]));
+    let flexFalseCount = flexFalseUnique.size;
     
     // OOG و Hazardous
     let oogContainers = data.filter(i => i["Is OOG"] === "true");
     let oogStrgeNet = oogContainers.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
-    let oogCount = oogContainers.length;
+    // 🆕 العدد الفريد لـ OOG
+    let oogUnique = new Set(oogContainers.map(i => i["Container No."]));
+    let oogCount = oogUnique.size;
     
     let hazardousContainers = data.filter(i => i["Is Hazardous"] === "true");
     let hazardousStrgeNet = hazardousContainers.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
-    let hazardousCount = hazardousContainers.length;
+    // 🆕 العدد الفريد لـ Hazardous
+    let hazardousUnique = new Set(hazardousContainers.map(i => i["Container No."]));
+    let hazardousCount = hazardousUnique.size;
     
-	let size20Containers = data.filter(i => {
-		let s = (i["Size"] || "").toString().trim();
-		return s.startsWith("2");
-	});
-	let size40Containers = data.filter(i => {
-		let s = (i["Size"] || "").toString().trim();
-		return s.startsWith("4") || s.startsWith("95");
-	});
+    // 🆕 المقاسات مع العدد الفريد
+    let size20Containers = data.filter(i => {
+        let s = (i["Size"] || "").toString().trim();
+        return s.startsWith("2");
+    });
+    let size40Containers = data.filter(i => {
+        let s = (i["Size"] || "").toString().trim();
+        return s.startsWith("4") || s.startsWith("95");
+    });
     
-    let size20Count = size20Containers.length;
-    let size40Count = size40Containers.length;
+    let size20Unique = new Set(size20Containers.map(i => i["Container No."]));
+    let size40Unique = new Set(size40Containers.map(i => i["Container No."]));
+    let size20Count = size20Unique.size;
+    let size40Count = size40Unique.size;
+    
     let size20StrgeNet = size20Containers.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
     let size40StrgeNet = size40Containers.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
     
     // تفاصيل Flex حسب المقاس
-    let flexTrue20 = flexTrueContainers.filter(i => i["Size"]?.toString().startsWith("2"));
-    let flexTrue40 = flexTrueContainers.filter(i => i["Size"]?.toString().startsWith("4"));
+    let flexTrue20 = flexTrueContainers.filter(i => {
+        let s = (i["Size"] || "").toString().trim();
+        return s.startsWith("2");
+    });
+    let flexTrue40 = flexTrueContainers.filter(i => {
+        let s = (i["Size"] || "").toString().trim();
+        return s.startsWith("4") || s.startsWith("95");
+    });
     let flexTrue20Net = flexTrue20.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
     let flexTrue40Net = flexTrue40.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
     
@@ -6790,35 +6857,52 @@ function renderAdvancedStatsTab6(data) {
     
     let totalStrgeNet = data.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
     let totalExprtNet = data.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
-    let totalCount = data.length;
+    
+    // 🆕 عدّ الحاويات الفريدة بدلاً من الصفوف
+    let uniqueContainerSet = new Set(data.map(item => item["Container No."]));
+    let totalCount = uniqueContainerSet.size;
     
     let refrigeratedContainers = data.filter(i => i["Is Refrigerated"] === "true");
-	    // ========== الحاويات المبردة ==========
-    let refrigeratedCount = refrigeratedContainers.length;
+    
+    // 🆕 العدد الفريد للمبردة
+    let refrigeratedUnique = new Set(refrigeratedContainers.map(i => i["Container No."]));
+    let refrigeratedCount = refrigeratedUnique.size;
+    
     let refrigeratedStrgeNet = refrigeratedContainers.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
     let refrigeratedExprtNet = refrigeratedContainers.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
-	    // ========== أضف هذا السطر هنا ==========
     let refrigeratedDays = refrigeratedContainers.reduce((s, i) => s + (i["EXPRT Days"] || 0), 0);
-    // =====================================
-
     
-    let refrigerated20 = refrigeratedContainers.filter(i => i["Size"]?.toString().startsWith("2"));
-    let refrigerated40 = refrigeratedContainers.filter(i => i["Size"]?.toString().startsWith("4"));
-    let refrigerated20Count = refrigerated20.length;
-    let refrigerated40Count = refrigerated40.length;
+    // 🆕 المبردة 20 و 40 قدم مع عدد فريد
+    let refrigerated20 = refrigeratedContainers.filter(i => {
+        let s = (i["Size"] || "").toString().trim();
+        return s.startsWith("2");
+    });
+    let refrigerated40 = refrigeratedContainers.filter(i => {
+        let s = (i["Size"] || "").toString().trim();
+        return s.startsWith("4") || s.startsWith("95");
+    });
+    let refrigerated20Unique = new Set(refrigerated20.map(i => i["Container No."]));
+    let refrigerated40Unique = new Set(refrigerated40.map(i => i["Container No."]));
+    let refrigerated20Count = refrigerated20Unique.size;
+    let refrigerated40Count = refrigerated40Unique.size;
+    
     let refrigerated20StrgeNet = refrigerated20.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
     let refrigerated40StrgeNet = refrigerated40.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
-	let size20Containers = data.filter(i => {
-		let s = (i["Size"] || "").toString().trim();
-		return s.startsWith("2");
-	});
-	let size40Containers = data.filter(i => {
-		let s = (i["Size"] || "").toString().trim();
-		return s.startsWith("4") || s.startsWith("95");
-	});
     
-    let size20Count = size20Containers.length;
-    let size40Count = size40Containers.length;
+    // 🆕 المقاسات العامة مع عدد فريد
+    let size20Containers = data.filter(i => {
+        let s = (i["Size"] || "").toString().trim();
+        return s.startsWith("2");
+    });
+    let size40Containers = data.filter(i => {
+        let s = (i["Size"] || "").toString().trim();
+        return s.startsWith("4") || s.startsWith("95");
+    });
+    
+    let size20Unique = new Set(size20Containers.map(i => i["Container No."]));
+    let size40Unique = new Set(size40Containers.map(i => i["Container No."]));
+    let size20Count = size20Unique.size;
+    let size40Count = size40Unique.size;
     
     return `
         <div style="display: flex; gap: 15px; margin: 0 25px 20px 25px; flex-wrap: wrap;">
@@ -6827,10 +6911,10 @@ function renderAdvancedStatsTab6(data) {
                 <div style="font-size: 28px; font-weight: bold;">${totalStrgeNet}</div>
                 <div style="font-size: 12px;">صافي أيام التخزين</div>
             </div>
-			    <div style="flex: 1; background: linear-gradient(135deg, #4facfe, #00f2fe); border-radius: 12px; padding: 15px; text-align: center; color: white;">
+            <div style="flex: 1; background: linear-gradient(135deg, #4facfe, #00f2fe); border-radius: 12px; padding: 15px; text-align: center; color: white;">
                 <div style="font-size: 14px;">❄️ الحاويات المبردة (RF)</div>
-				<div style="font-size: 28px; font-weight: bold;">${refrigeratedDays}</div>
-				<div style="font-size: 12px;">إجمالي أيام EXPRT للمبردة</div>
+                <div style="font-size: 28px; font-weight: bold;">${refrigeratedDays}</div>
+                <div style="font-size: 12px;">إجمالي أيام EXPRT للمبردة</div>
                 <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.3); font-size: 12px;">
                     <div>📦 إجمالي STRGE: ${refrigeratedStrgeNet} يوم</div>
                     <div>📤 إجمالي EXPRT: ${refrigeratedExprtNet} يوم</div>
@@ -6848,7 +6932,7 @@ function renderAdvancedStatsTab6(data) {
                 <div style="font-size: 28px; font-weight: bold;">${totalCount}</div>
                 <div style="font-size: 12px;">حاوية</div>
                 <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.3); font-size: 12px;">
-                    <div>❄️ مبردة: ${refrigeratedContainers.length}</div>
+                    <div>❄️ مبردة: ${refrigeratedCount}</div>
                     <div>📦 20 قدم: ${size20Count}</div>
                     <div>📦 40 قدم: ${size40Count}</div>
                 </div>
