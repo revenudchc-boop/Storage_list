@@ -232,6 +232,8 @@
         📄 لا يوجد ملف محمل
     </div>
     <button id="exportAllBtn" class="export-all-btn">📥 تصدير جميع التبويبات</button>
+	
+	<button id="interactiveReportBtn" style="background: #e67e22; color: white; padding: 12px 28px; border-radius: 40px; cursor: pointer; display: inline-block; font-weight: bold; font-size: 16px; transition: 0.3s; margin: 5px; border: none;">📊 تقرير مجمع تفاعلي</button>
 </div>
 
 
@@ -251,6 +253,7 @@
 		<button class="tab-btn" data-tab="tab5">🚛 TRSHP فقط</button>
 		<button class="tab-btn" data-tab="tab6">📦 STRGE + EXPRT فقط</button>
 		<button class="tab-btn" data-tab="tab7">📥 IMPRT + FORWARD</button>  <!-- ← أضف هذا -->
+		<button class="tab-btn" data-tab="tab8">📋 Storage Finalout</button>
 
     </div>
 
@@ -808,6 +811,54 @@
     </div>
 </div>
 
+<!-- تبويب 8: Storage Finalout -->
+<div id="tab8" class="tab-content">
+    <div style="text-align: left; padding: 15px 25px 0 25px;">
+        <button class="settings-btn" id="settingsBtn8">⚙️ إعدادات Storage Finalout</button>
+    </div>
+    <div id="settingsPanel8" class="settings-panel">
+        <h3>⚙️ إعدادات Storage Finalout</h3>
+        <p style="color: #6c757d;">لا توجد إعدادات مخصصة لهذا التبويب حالياً</p>
+        <button id="closeSettings8" class="add-period" style="background:#6c757d;">إغلاق</button>
+    </div>
+    <div id="statsTab8" class="stats" style="display: none;"></div>
+    <div class="filters" id="filtersTab8" style="display: none;">
+        <input type="text" id="searchTab8" placeholder="🔍 بحث برقم الحاوية..." />
+        <select id="typeTab8">
+            <option value="">كل الأنواع</option>
+            <option value="RF">RF (ثلاجه)</option>
+            <option value="GP">GP (عام)</option>
+        </select>
+    </div>
+    <div class="table-wrapper" id="wrapperTab8" style="display: none;">
+        <div class="btn-container" style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; gap: 10px;">
+                <button class="print-btn" id="printBtn8">🖨️ طباعة التقرير</button>
+                <button class="settings-btn" id="selectColumnsBtn8" style="background:#6c757d;">📊 اختيار الأعمدة</button>
+            </div>
+            <button class="export-btn" id="exportBtn8">📎 تصدير إلى Excel</button>
+        </div>
+        <div class="note">📅 تقرير الحاويات الصادرة - FINALOUT</div>
+        <table id="tableTab8">
+            <thead>
+                <tr>
+                    <th>رقم الحاوية</th>
+                    <th>النوع</th>
+                    <th>المنشأ</th>
+                    <th>تاريخ الدخول</th>
+                    <th>تاريخ الخروج</th>
+                    <th>أيام التخزين (جديد)</th>
+                    <th>Storage Days Total</th>
+                    <th>الملاحظات</th>
+                    <th>نوع الشحنة</th>
+                </tr>
+            </thead>
+            <tbody id="bodyTab8">
+                <tr><td colspan="9">📂 يرجى تحميل ملف Excel</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
 
     <div class="footer" id="footerMsg"></div>
 </div>  <!-- نهاية container -->

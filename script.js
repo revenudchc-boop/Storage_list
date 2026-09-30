@@ -66,6 +66,9 @@ let imprtForwardPeriods7 = JSON.parse(localStorage.getItem("imprtForwardPeriodsT
 let excludeLines7 = JSON.parse(localStorage.getItem("excludeLines7")) || [];
 let nextIdImprtForward7 = imprtForwardPeriods7.length > 0 ? Math.max(...imprtForwardPeriods7.map(p => p.id)) + 1 : 1;
 
+
+let currentData8 = [];
+let storageFinaloutData = [];
 // ========== تحميل الإعدادات تلقائياً من GitHub ==========
 const SETTINGS_URL = 'https://raw.githubusercontent.com/revenudchc-boop/Storage_Reports/main/settings.json';
 
@@ -281,11 +284,18 @@ function initializeAllSelects() {
 // ========== دوال حفظ وتحميل الملف ==========
 function saveFileToLocalStorage(fileData, fileName) {
     try {
+        // تقدير حجم البيانات (base64)
+        const sizeInMB = fileData.length * 3 / 4 / 1024 / 1024;
+        if (sizeInMB > 5) {
+            console.warn(`⚠️ الملف كبير جداً (${sizeInMB.toFixed(1)} ميجابايت)، لن يتم حفظه في localStorage.`);
+            return; // لا نحفظ، ولكن لا نرمي خطأ
+        }
         localStorage.setItem("savedExcelFile", fileData);
         localStorage.setItem("savedExcelFileName", fileName);
-        console.log("تم حفظ الملف:", fileName);
+        console.log("✅ تم حفظ الملف:", fileName);
     } catch(e) {
-        console.error("خطأ في حفظ الملف:", e);
+        console.warn("⚠️ فشل حفظ الملف في localStorage:", e.message);
+        // لا نرمي خطأ، نستمر في التنفيذ
     }
 }
 
@@ -295,6 +305,59 @@ function processExcelFile(file) {
     let reader = new FileReader();
     reader.onload = function(evt) {
         try {
+            let arrayBuffer = evt.target.result;
+
+            // محاولة حفظ الملف
+            try {
+                let binary = '';
+                let bytes = new Uint8Array(arrayBuffer);
+                for (let i = 0; i < bytes.byteLength; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                let base64Data = btoa(binary);
+                saveFileToLocalStorage(base64Data, file.name);
+            } catch(e) {
+                console.warn("⚠️ فشل حفظ الملف، لكن المتابعة مستمرة:", e.message);
+            }
+
+            let workbook = XLSX.read(arrayBuffer, { type: 'array' });
+            let sheet = workbook.Sheets[workbook.SheetNames[0]];
+            // استخدام range: 4 لتخطي الصفوف غير الضرورية
+            let rows = XLSX.utils.sheet_to_json(sheet, { defval: "", range: 4 });
+
+            console.log(`📄 عدد الصفوف المقروءة: ${rows.length}`);
+            if (rows.length === 0) {
+                document.getElementById("footerMsg").innerHTML = "⚠️ الملف فارغ أو التنسيق غير صحيح";
+                return;
+            }
+
+            // ===== التحقق من نوع الملف =====
+            let firstRow = rows[0];
+            let keys = Object.keys(firstRow);
+            console.log("🔍 أسماء الأعمدة في الملف:", keys);
+            
+            let hasUnitNbr = keys.some(k => k.trim() === "Unit Nbr");
+            let hasEquipId = keys.some(k => k.trim() === "Equip ID");
+            let isFinalout = hasUnitNbr && !hasEquipId;
+			
+// ===== 🆕 فحص شامل لجميع الحقول =====
+let fieldCheck = checkExcelFields(rows, isFinalout ? "finalout" : "main");
+if (!fieldCheck.valid) {
+    console.log("❌ فشل التحميل بسبب نقص الحقول");
+    return;  // ← إيقاف التحميل تماماً
+}
+console.log("✅ فحص جميع الحقول نجح، بدء المعالجة...");
+
+            if (isFinalout) {
+                console.log("📂 تم التعرف على ملف FINALOUT (تبويب 8)");
+                processFinaloutFile(rows);
+                document.getElementById("footerMsg").innerHTML = `✅ تم تحميل ملف FINALOUT: ${file.name} | عدد الحاويات: ${currentData8.length}`;
+                return;
+            }
+
+            // ===== معالجة الملف العادي =====
+            console.log("📂 تم التعرف على ملف البيانات الرئيسي (تبويبات 1-7)");
+
             // تنظيف البيانات القديمة
             currentData1 = [];
             currentData2 = [];
@@ -302,59 +365,252 @@ function processExcelFile(file) {
             currentData4 = [];
             currentData5 = [];
             currentData6 = [];
-            currentData7 = [];  // ← أضف هذا
-
+            currentData7 = [];
             containersMap.clear();
-            
-            let data = new Uint8Array(evt.target.result);
-            let workbook = XLSX.read(data, { type: 'array' });
-            let sheet = workbook.Sheets[workbook.SheetNames[0]];
-            let rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-            
+			
+			// ===== 🆕 مسح بطاقات الإجمالي والجداول القديمة =====
+for (let i = 1; i <= 8; i++) {
+    // مسح بطاقات الإجمالي
+    let statsDiv = document.getElementById("statsTab" + i);
+    if (statsDiv) {
+        statsDiv.innerHTML = "";
+        statsDiv.style.display = "none";
+    }
+    
+    // مسح الجداول
+    let tbody = document.getElementById("bodyTab" + i);
+    if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="30" style="text-align:center; padding:40px;">⏳ جاري تحميل البيانات...</td></tr>`;
+    }
+    
+    // إخفاء الفلاتر
+    let filtersDiv = document.getElementById("filtersTab" + i);
+    if (filtersDiv) {
+        filtersDiv.style.display = "none";
+    }
+    
+    // إخفاء الجداول
+    let wrapperDiv = document.getElementById("wrapperTab" + i);
+    if (wrapperDiv) {
+        wrapperDiv.style.display = "none";
+    }
+}
+
+console.log("🧹 تم مسح بطاقات الإجمالي والجداول القديمة");
+
             for (let row of rows) {
                 let equipId = row["Equip ID"];
                 if (!equipId || equipId === "") continue;
-                
-                if (!containersMap.has(equipId)) {
-				containersMap.set(equipId, {
-					equipId: equipId,
-					equipmentType: row["Equipment Type"] || "",
-					lineId: row["Line ID"] || "",
-					trshpList: [],
-					exprtList: [],      // ← تغيير من exprt: null إلى exprtList: []
-					strgeList: [],      // ← مصفوفة
-					imprt: null,
-					trshpReturn: null
-				});
-                }
+
+				if (!containersMap.has(equipId)) {
+					containersMap.set(equipId, {
+						equipId: equipId,
+						equipmentType: row["Equipment Type"] || "",
+						lineId: row["Line ID"] || "",
+						notes: row["Notes"] || "",   // ← السطر الجديد
+						trshpList: [],
+						exprtList: [],
+						strge: null,
+						imprt: null,
+						trshpReturn: null
+					});
+				}
                 let c = containersMap.get(equipId);
                 let cat = row["Category"];
                 let drayStatus = row["Dray Status"] || "";
-                
+
                 if (cat === "TRSHP") {
-                    c.trshpList.push(row);    // ← نضيف إلى المصفوفة
+                    c.trshpList.push(row);
                     if (drayStatus === "RETURN") {
-					c.trshpList.push(row);    // ← تغيير: من c.trshp = row إلى c.trshpList.push(row)
+                        c.trshpReturn = row;
                     }
                 }
                 else if (cat === "EXPRT") {
-    if (!c.exprtList) c.exprtList = [];
-    c.exprtList.push(row);
-}
-                else if (cat === "STRGE") c.strge = row;
-                else if (cat === "IMPRT") c.imprt = row;
+                    if (!c.exprtList) c.exprtList = [];
+                    c.exprtList.push(row);
+                }
+                else if (cat === "STRGE") {
+                    c.strge = row;
+                }
+                else if (cat === "IMPRT") {
+                    c.imprt = row;
+                }
             }
-            
+
+            console.log(`📦 containersMap.size بعد القراءة: ${containersMap.size}`);
+
+            // معالجة جميع التبويبات
             processAndDisplay1();
             processAndDisplay2();
             processAndDisplay3();
             processAndDisplay4();
             processAndDisplay5();
             processAndDisplay6();
-			processAndDisplay7();  // ← هنا المكان الصحيح
+            processAndDisplay7();
+            processAndDisplay8();
 
-            
-            document.getElementById("footerMsg").innerHTML = `✅ تم تحميل: ${file.name} | TRSHP+EXPRT: ${currentData1.length} | STRGE+EXPRT+IMPRT: ${currentData2.length} | EXPRT فقط: ${currentData3.length} | STRGE فارغ: ${currentData4.length} | TRSHP فقط: ${currentData5.length} | STRGE+EXPRT فقط: ${currentData6.length} | IMPRT+FORWARD: ${currentData7.length}`;
+            updateHeaderInfo('1');
+
+            setTimeout(function() {
+                applySavedColumnPreferences();
+            }, 200);
+
+            document.getElementById("footerMsg").innerHTML = `✅ تم تحميل: ${file.name} | TRSHP+EXPRT: ${currentData1.length} | STRGE+EXPRT+IMPRT: ${currentData2.length} | EXPRT فقط: ${currentData3.length} | STRGE فارغ: ${currentData4.length} | TRSHP فقط: ${currentData5.length} | STRGE+EXPRT فقط: ${currentData6.length} | IMPRT+FORWARD: ${currentData7.length} | Storage Finalout: ${currentData8.length}`;
+        } catch(err) {
+            console.error("❌ خطأ في معالجة الملف:", err);
+            document.getElementById("footerMsg").innerHTML = `❌ خطأ: ${err.message}`;
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function processFinaloutFile(rows) {
+    console.log("🔄 معالجة ملف FINALOUT...");
+    let result = [];
+
+    for (let row of rows) {
+        // استخراج البيانات من الأعمدة الصحيحة
+        let unitNbr = row["Unit Nbr"] || "";
+        if (!unitNbr) continue; // تخطي الصفوف بدون رقم حاوية
+
+        let typeISO = row["Type ISO"] || "";
+        let category = row["Category"] || "";
+        let orig = row["Orig"] || "";
+        let drayStatus = row["Dray Status"] || "";
+        let orderNumber = row["Order Number"] || "";
+        let timeIn = row["Time In"] || "";
+        let timeOut = row["Time Out"] || "";
+        let storageDaysTotal = parseInt(row["Storage Days Total"]) || 0;
+        let loaded = row["Loaded"] || "";
+        let lclPoss = row["LCL-POSS"] || "";
+        let lineOp = row["Line Op"] || "";
+        let freightKind = row["Frght Kind"] || "";
+
+        // تحويل التواريخ
+        let timeInFormatted = convertDate(timeIn);
+        let timeOutFormatted = convertDate(timeOut);
+
+        // حساب أيام التخزين الجديدة (حسب القاعدة)
+        let newStorageDays = 0;
+        if (timeInFormatted && timeOutFormatted) {
+            let diff = diffDays(timeInFormatted, timeOutFormatted);
+            if (orig === "DPA") {
+                newStorageDays = diff - 1;
+                if (newStorageDays < 0) newStorageDays = 0;
+            } else {
+                newStorageDays = diff;
+            }
+        }
+
+        // ترتيب حسب LCL-POSS
+        let sortKey = lclPoss || "zzzz";
+
+        result.push({
+            "رقم الحاوية": unitNbr,
+            "النوع": typeISO,
+            "المنشأ": orig || "—",
+            "رقم الأمر": orderNumber,
+            "الخط المشغل": lineOp,
+            "تاريخ الدخول": timeInFormatted || "—",
+            "تاريخ الخروج": timeOutFormatted || "—",
+            "أيام التخزين (جديد)": newStorageDays,
+            "Storage Days Total": storageDaysTotal,
+            "الملاحظات": lclPoss || "—",
+            "نوع الشحنة": freightKind || "—",
+            "_sortKey": sortKey
+        });
+    }
+
+    // ترتيب النتائج حسب LCL-POSS
+    result.sort((a, b) => a["_sortKey"].localeCompare(b["_sortKey"]));
+    result.forEach(item => delete item._sortKey);
+
+    currentData8 = result;
+    console.log(`✅ تمت معالجة ${currentData8.length} حاوية في تبويب Storage Finalout`);
+
+    // تحديث الـ Header
+    let headerInfo = {
+        orderNumber: result.length > 0 ? result[0]["رقم الأمر"] : "",
+        lineOp: result.length > 0 ? result[0]["الخط المشغل"] : ""
+    };
+    updateStorageFinaloutHeader(headerInfo);
+
+    // عرض البيانات في الجدول
+    renderTable8("bodyTab8", currentData8, "searchTab8", "typeTab8", "statsTab8");
+
+    // إظهار عناصر التبويب
+    let filtersDiv = document.getElementById("filtersTab8");
+    let wrapperDiv = document.getElementById("wrapperTab8");
+    let statsDiv = document.getElementById("statsTab8");
+
+    if (filtersDiv) filtersDiv.style.display = "flex";
+    if (wrapperDiv) wrapperDiv.style.display = "block";
+    if (statsDiv && currentData8.length > 0) {
+        statsDiv.innerHTML = renderAdvancedStatsTab8(currentData8);
+        statsDiv.style.display = "flex";
+    }
+
+    // ===== تنشيط تبويب 8 تلقائياً =====
+    let tab8Div = document.getElementById("tab8");
+    if (tab8Div && !tab8Div.classList.contains("active")) {
+        tab8Div.classList.add("active");
+        document.querySelectorAll(".tab-content").forEach(c => {
+            if (c.id !== "tab8") c.classList.remove("active");
+        });
+        document.querySelectorAll(".tab-btn").forEach(b => {
+            b.classList.remove("active");
+            if (b.dataset.tab === "tab8") b.classList.add("active");
+        });
+    }
+}
+
+// ===== دالة جديدة لمعالجة الملفات =====
+function handleFileUpload(file) {
+    let reader = new FileReader();
+    reader.onload = function(evt) {
+        try {
+            let arrayBuffer = evt.target.result;
+            let workbook = XLSX.read(arrayBuffer, { type: 'array' });
+            let sheet = workbook.Sheets[workbook.SheetNames[0]];
+            let rows = XLSX.utils.sheet_to_json(sheet, { defval: "", range: 0 });
+
+            console.log(`📄 عدد الصفوف المقروءة: ${rows.length}`);
+            if (rows.length === 0) {
+                document.getElementById("footerMsg").innerHTML = "⚠️ الملف فارغ";
+                return;
+            }
+
+            let firstRow = rows[0];
+            let keys = Object.keys(firstRow);
+            console.log("🔍 أسماء الأعمدة:", keys);
+
+            // إذا كان هناك عمود "Unit Nbr"، نعتبره FINALOUT
+            let hasUnitNbr = keys.some(k => k.trim() === "Unit Nbr");
+            if (hasUnitNbr) {
+                console.log("📂 تم التعرف على FINALOUT");
+                processFinaloutFile(rows);
+                document.getElementById("footerMsg").innerHTML = `✅ تم تحميل FINALOUT: ${file.name} | عدد الحاويات: ${currentData8.length}`;
+                // تنشيط تبويب 8
+                let tab8Div = document.getElementById("tab8");
+                if (tab8Div) {
+                    tab8Div.classList.add("active");
+                    document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+                    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+                    tab8Div.classList.add("active");
+                    document.querySelector('.tab-btn[data-tab="tab8"]').classList.add("active");
+                }
+                return;
+            }
+
+            // هنا معالجة الملف العادي...
+            console.log("📂 ملف عادي (تبويبات 1-7)");
+            // ... (ضع كود المعالجة العادية هنا)
+            // لكننا سنستدعي الدالة القديمة للتبويبات 1-7
+            // لكن لتجنب التعقيد، سنضيف استدعاء processExcelFile القديم
+            // ولكن يجب تجنب التكرار، لذا سننقل كود المعالجة العادية إلى هنا.
+            // لكن للاختصار، سأفترض أنك ستستخدم الدالة القديمة بعد التعديل.
+            // لكن الأفضل هو استخدام الدالة القديمة المعدلة.
+
         } catch(err) {
             console.error(err);
             document.getElementById("footerMsg").innerHTML = `❌ خطأ: ${err.message}`;
@@ -371,7 +627,8 @@ let selectedColumns = {
     tab4: JSON.parse(localStorage.getItem("selectedColumns_tab4")) || [],
     tab5: JSON.parse(localStorage.getItem("selectedColumns_tab5")) || [],
     tab6: JSON.parse(localStorage.getItem("selectedColumns_tab6")) || [],
-    tab7: JSON.parse(localStorage.getItem("selectedColumns_tab7")) || []  // ← أضف هذا
+    tab7: JSON.parse(localStorage.getItem("selectedColumns_tab7")) || [],  // ← أضف هذا
+	tab8: JSON.parse(localStorage.getItem("selectedColumns_tab8")) || []  // ← أضف هذا
 };
 
 // تعريف الأعمدة المتاحة للتبويب 1
@@ -482,6 +739,7 @@ const availableColumnsTab4 = {
         { name: "Line ID", label: "الخط", default: true },
         { name: "طريقة الحساب", label: "طريقة الحساب", default: false },
         { name: "Flex String 01", label: "Flex String 01", default: false },
+		{ name: "Notes", label: "ملاحظات", default: true },  // ← أضف هذا
         { name: "IMPRT Start", label: "بداية IMPRT", default: true },
         { name: "IMPRT End", label: "نهاية IMPRT", default: true },
         { name: "IMPRT Days", label: "أيام IMPRT", default: true },
@@ -536,6 +794,7 @@ const availableColumnsTab6 = {
         { name: "طريقة الحساب", label: "طريقة الحساب", default: false },
         { name: "Flex String 01", label: "Flex String 01", default: false },
 		{ name: "flex_04", label: "flex_04", default: false },  // ← أضف هذا
+		{ name: "Notes", label: "ملاحظات", default: true },  // ← أضف هذا
         { name: "STRGE Start", label: "بداية STRGE", default: true },
         { name: "STRGE End", label: "نهاية STRGE", default: true },
         { name: "STRGE Days", label: "أيام STRGE", default: true },
@@ -574,6 +833,20 @@ const availableColumnsTab7 = {
         { name: "Free", label: "أيام السماح", default: true },
         { name: "Net", label: "الصافي", default: true },
         { name: "Vessel Name", label: "اسم السفينة", default: true }
+    ]
+};
+
+const availableColumnsTab8 = {
+    tab8: [
+        { name: "رقم الحاوية", label: "رقم الحاوية", default: true },
+        { name: "النوع", label: "النوع", default: true },
+        { name: "المنشأ", label: "المنشأ", default: true },
+        { name: "تاريخ الدخول", label: "تاريخ الدخول", default: true },
+        { name: "تاريخ الخروج", label: "تاريخ الخروج", default: true },
+        { name: "أيام التخزين (جديد)", label: "أيام التخزين (جديد)", default: true },
+        { name: "Storage Days Total", label: "Storage Days Total", default: true },
+        { name: "الملاحظات", label: "الملاحظات", default: true },
+        { name: "نوع الشحنة", label: "نوع الشحنة", default: true }
     ]
 };
 
@@ -730,7 +1003,8 @@ function loadLastFileFromStorage() {
         currentData4 = [];
         currentData5 = [];
         currentData6 = [];
-        currentData7 = [];  // ← أضف هذا
+        currentData7 = [];
+        currentData8 = [];
 
         containersMap.clear();
         
@@ -746,36 +1020,84 @@ function loadLastFileFromStorage() {
         let sheet = workbook.Sheets[workbook.SheetNames[0]];
         let rows = XLSX.utils.sheet_to_json(sheet, { defval: "", range: 4 });
         
+        console.log(`📄 عدد الصفوف المقروءة من الملف المحفوظ: ${rows.length}`);
+        if (rows.length === 0) {
+            document.getElementById("footerMsg").innerHTML = "⚠️ الملف المحفوظ فارغ";
+            return;
+        }
+        
+        // ===== 🆕 كشف نوع الملف =====
+        let firstRow = rows[0];
+        let keys = Object.keys(firstRow);
+        console.log("🔍 أسماء الأعمدة في الملف المحفوظ:", keys);
+        
+        let hasUnitNbr = keys.some(k => k.trim() === "Unit Nbr");
+        let hasEquipId = keys.some(k => k.trim() === "Equip ID");
+        let isFinalout = hasUnitNbr && !hasEquipId;
+        
+        // ===== 🆕 فحص الحقول المطلوبة =====
+        let fieldCheck = checkExcelFields(rows, isFinalout ? "finalout" : "main");
+        if (!fieldCheck.valid) {
+            console.log("❌ فشل تحميل الملف المحفوظ بسبب نقص الحقول");
+            return;
+        }
+        
+        // ===== 🆕 إذا كان الملف FINALOUT =====
+        if (isFinalout) {
+            console.log("📂 الملف المحفوظ هو FINALOUT - معالجة كملف finalout");
+            processFinaloutFile(rows);
+            
+            document.getElementById("footerMsg").innerHTML = `✅ تم تحميل الملف المحفوظ (FINALOUT): ${savedFileName} | عدد الحاويات: ${currentData8.length}`;
+            
+            // تنشيط تبويب 8
+            let tab8Div = document.getElementById("tab8");
+            if (tab8Div) {
+                tab8Div.classList.add("active");
+                document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+                tab8Div.classList.add("active");
+                document.querySelectorAll(".tab-btn").forEach(b => {
+                    b.classList.remove("active");
+                    if (b.dataset.tab === "tab8") b.classList.add("active");
+                });
+            }
+            
+            return;  // ← إيقاف المعالجة العادية
+        }
+        
+        // ===== الملف الرئيسي (التبويبات 1-7) - المعالجة العادية =====
+        console.log("📂 الملف المحفوظ هو الملف الرئيسي");
+        
         for (let row of rows) {
             let equipId = row["Equip ID"];
             if (!equipId || equipId === "") continue;
             
             if (!containersMap.has(equipId)) {
-				containersMap.set(equipId, {
-					equipId: equipId,
-					equipmentType: row["Equipment Type"] || "",
-					lineId: row["Line ID"] || "",
-					trshpList: [],
-					exprtList: [],      // ← صح: مصفوفة
-					strge: null,
-					imprt: null,
-					trshpReturn: null
-				});
+                containersMap.set(equipId, {
+                    equipId: equipId,
+                    equipmentType: row["Equipment Type"] || "",
+                    lineId: row["Line ID"] || "",
+                    trshpList: [],
+                    exprtList: [],
+                    strge: null,
+                    imprt: null,
+                    trshpReturn: null,
+                    notes: row["Notes"] || "",
+                });
             }
             let c = containersMap.get(equipId);
             let cat = row["Category"];
             let drayStatus = row["Dray Status"] || "";
             
             if (cat === "TRSHP") {
-                c.trshpList.push(row);    // ← نضيف إلى المصفوفة
+                c.trshpList.push(row);
                 if (drayStatus === "RETURN") {
                     c.trshpReturn = row;
                 }
             }
             else if (cat === "EXPRT") {
-    if (!c.exprtList) c.exprtList = [];
-    c.exprtList.push(row);
-}
+                if (!c.exprtList) c.exprtList = [];
+                c.exprtList.push(row);
+            }
             else if (cat === "STRGE") c.strge = row;
             else if (cat === "IMPRT") c.imprt = row;
         }
@@ -786,7 +1108,8 @@ function loadLastFileFromStorage() {
         processAndDisplay4();
         processAndDisplay5();
         processAndDisplay6();
-		processAndDisplay7();  // ← هنا المكان الصحيح
+        processAndDisplay7();
+        processAndDisplay8();
 
         updateHeaderInfo('1');
         
@@ -844,7 +1167,8 @@ function sortPeriods(periods) {
 function updateEndDates(periods) {
     let groups = {};
     for (let p of periods) {
-        let key = `${p.lineId}|${p.drayStatus || ""}|${p.flexString01 || ""}`;
+        // المفتاح يشمل Line ID، Dray Status، Flex String 01، و Hazardous
+        let key = `${p.lineId}|${p.drayStatus || ""}|${p.flexString01 || ""}|${p.isHazardous || ""}`;
         if (!groups[key]) groups[key] = [];
         groups[key].push(p);
     }
@@ -867,27 +1191,37 @@ function updateEndDates(periods) {
     return result;
 }
 
-function getFreeDays(periods, lineId, periodDate, flexString01, drayStatus) {
+function getFreeDays(periods, lineId, periodDate, flexString01, drayStatus, freightKind, isHazardous) {
+    let cleanFreightKind = (freightKind || "").trim().toUpperCase();
+    let isHazardousBool = (isHazardous === true || String(isHazardous).toLowerCase() === "true");
+
     let matchingPeriods = periods.filter(p => {
         let lineMatch = (p.lineId === lineId || p.lineId === "*");
         
         let flexMatch = true;
-        if (p.flexString01 === "TRUE") {
-            flexMatch = (flexString01 === "TRUE");
-        } else if (p.flexString01 === "FALSE") {
-            flexMatch = (flexString01 !== "TRUE");
-        }
+        if (p.flexString01 === "TRUE") flexMatch = (flexString01 === "TRUE");
+        else if (p.flexString01 === "FALSE") flexMatch = (flexString01 !== "TRUE");
         
         let drayMatch = true;
-        if (p.drayStatus === "RETURN") {
-            drayMatch = (drayStatus === "RETURN");
-        } else if (p.drayStatus === "FORWARD") {
-            drayMatch = (drayStatus === "FORWARD");
-        } else if (p.drayStatus === "EMPTY") {
-            drayMatch = (!drayStatus || drayStatus === "");
+        if (p.drayStatus === "RETURN") drayMatch = (drayStatus === "RETURN");
+        else if (p.drayStatus === "FORWARD") drayMatch = (drayStatus === "FORWARD");
+        else if (p.drayStatus === "EMPTY") drayMatch = (!drayStatus || drayStatus === "");
+        
+        let freightMatch = true;
+        if (p.freightKind && p.freightKind !== "") {
+            let periodFreightKind = p.freightKind.trim().toUpperCase();
+            freightMatch = (periodFreightKind === cleanFreightKind);
         }
         
-        return lineMatch && flexMatch && drayMatch;
+        // ===== التعديل هنا: مقارنة غير حساسة لحالة الأحرف =====
+        let hazardMatch = true;
+        if (p.isHazardous && p.isHazardous.toLowerCase() === "true") {
+            hazardMatch = isHazardousBool;
+        } else if (p.isHazardous && p.isHazardous.toLowerCase() === "false") {
+            hazardMatch = !isHazardousBool;
+        }
+        
+        return lineMatch && flexMatch && drayMatch && freightMatch && hazardMatch;
     });
     
     if (matchingPeriods.length === 0) return 0;
@@ -1103,7 +1437,7 @@ function renderAdvancedStats(data) {
             <!-- بطاقة 3: Dray Status & Flex String (منفصلة) -->
             <div style="flex: 1; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.1);">
                 <div style="background: #ff6b6b; color: white; padding: 6px; text-align: center; font-weight: bold; font-size: 10px;">
-                    📊 تفاصيل Dray Status & Flex String
+                    📊 ReExport_Storage
                 </div>
                 <div style="padding: 8px;">
                     <div style="margin-bottom: 8px;">
@@ -1471,97 +1805,7 @@ function closeColumnModal() {
 document.getElementById("fileInput").addEventListener("change", function(e) {
     let file = e.target.files[0];
     if (!file) return;
-    
-    // تنظيف البيانات القديمة
-    currentData1 = [];
-    currentData2 = [];
-    currentData3 = [];
-    currentData4 = [];
-    currentData5 = [];
-    currentData6 = [];
-    containersMap.clear();
-    
-    updateFileNameDisplay(file.name);
-    
-    let reader = new FileReader();
-    reader.onload = function(evt) {
-        let arrayBuffer = evt.target.result;
-        
-        // حفظ الملف في localStorage
-        let binary = '';
-        let bytes = new Uint8Array(arrayBuffer);
-        for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
-        }
-        let base64Data = btoa(binary);
-        saveFileToLocalStorage(base64Data, file.name);
-        
-        let workbook = XLSX.read(arrayBuffer, { type: 'array' });
-        let sheet = workbook.Sheets[workbook.SheetNames[0]];
-        let rows = XLSX.utils.sheet_to_json(sheet, { defval: "", range: 4 });
-        
-        for (let row of rows) {
-            let equipId = row["Equip ID"];
-            if (!equipId || equipId === "") continue;
-            
-            if (!containersMap.has(equipId)) {
-                containersMap.set(equipId, {
-                    equipId: equipId,
-                    equipmentType: row["Equipment Type"] || "",
-                    lineId: row["Line ID"] || "",
-                    trshpList: [],
-                    exprtList: [],      // ← تغيير: من exprt: null إلى exprtList: []
-                    strge: null,
-                    imprt: null,
-                    trshpReturn: null
-                });
-            }
-            let c = containersMap.get(equipId);
-            let cat = row["Category"];
-            let drayStatus = row["Dray Status"] || "";
-            
-            if (cat === "TRSHP") {
-                c.trshpList.push(row);
-                if (drayStatus === "RETURN") {
-                    c.trshpReturn = row;
-                }
-            }
-            else if (cat === "EXPRT") {
-                if (!c.exprtList) c.exprtList = [];
-                c.exprtList.push(row);
-            }
-            else if (cat === "STRGE") {
-                c.strge = row;
-            }
-            else if (cat === "IMPRT") {
-                c.imprt = row;
-            }
-        }
-        
-        // للتشخيص - تأكد من قراءة جميع EXPRT
-        console.log("عدد الصفوف المقروءة:", rows.length);
-        let testContainer = containersMap.get("UETU6230321");
-        if (testContainer) {
-            console.log("عدد EXPRT في exprtList:", testContainer.exprtList?.length);
-        }
-        
-        processAndDisplay1();
-        processAndDisplay2();
-        processAndDisplay3();
-        processAndDisplay4();
-        processAndDisplay5();
-        processAndDisplay6();
-		        processAndDisplay7();  // ← هنا المكان الصحيح
-
-        updateHeaderInfo('1');
-        
-        setTimeout(function() {
-            applySavedColumnPreferences();
-        }, 200);
-        
-        document.getElementById("footerMsg").innerHTML = `✅ تم تحميل: ${file.name} | TRSHP+EXPRT: ${currentData1.length} | STRGE+EXPRT+IMPRT: ${currentData2.length} | EXPRT فقط: ${currentData3.length} | STRGE فارغ: ${currentData4.length} | TRSHP فقط: ${currentData5.length} | STRGE+EXPRT فقط: ${currentData6.length} | IMPRT+FORWARD: ${currentData7.length}`;
-    };
-    reader.readAsArrayBuffer(file);
+    processExcelFile(file); // استدعاء الدالة المعدلة
 });
 
 function processAndDisplay1() {
@@ -1572,9 +1816,9 @@ function processAndDisplay1() {
         let exprtList = container.exprtList || [];
         
         if (trshpArray.length === 0 || exprtList.length === 0) continue;
-		
-		 let hasReturnTrshp = trshpArray.some(tr => (tr["Dray Status"] || "") === "RETURN");
-    if (hasReturnTrshp) continue;
+        
+        let hasReturnTrshp = trshpArray.some(tr => (tr["Dray Status"] || "") === "RETURN");
+        if (hasReturnTrshp) continue;
         
         // ترتيب فترات TRSHP حسب التاريخ
         let sortedTrshp = [...trshpArray].sort((a, b) => 
@@ -1585,21 +1829,52 @@ function processAndDisplay1() {
         let totalFreeDays = 0;
         let lineId = container.lineId || "";
         
+        // حساب السماح الكلي من أول VESSEL مع مراعاة Flex String 01 من TRSHP أو EXPRT
+        let foundVessel = false;
         for (let tr of sortedTrshp) {
             let ibLocType = tr["I/B Loc Type"] || "";
             if (ibLocType === "VESSEL") {
                 let flexString01 = tr["Flex String 01"] || "";
+                if (flexString01 === "") {
+                    for (let ex of exprtList) {
+                        let obLocType = (ex["O/B Loc Type"] || "").trim().toUpperCase();
+                        if (obLocType !== "TRUCK") {
+                            flexString01 = ex["Flex String 01"] || "";
+                            break;
+                        }
+                    }
+                }
                 let drayStatus = tr["Dray Status"] || "";
-                totalFreeDays = getFreeDays(trshpPeriods1, lineId, convertDate(tr["Start Time"]), flexString01, drayStatus);
+                let hazardousFlag = (tr["Is Hazardous"] === "true" || tr["Is Hazardous"] === true);
+                totalFreeDays = getFreeDays(trshpPeriods1, lineId, convertDate(tr["Start Time"]), flexString01, drayStatus, "", hazardousFlag);
+                foundVessel = true;
                 break;
             }
+        }
+        // إذا لم نجد VESSEL، نأخذ من أول TRSHP
+        if (!foundVessel && sortedTrshp.length > 0) {
+            let firstTr = sortedTrshp[0];
+            let flexString01 = firstTr["Flex String 01"] || "";
+            if (flexString01 === "") {
+                for (let ex of exprtList) {
+                    let obLocType = (ex["O/B Loc Type"] || "").trim().toUpperCase();
+                    if (obLocType !== "TRUCK") {
+                        flexString01 = ex["Flex String 01"] || "";
+                        break;
+                    }
+                }
+            }
+            let drayStatus = firstTr["Dray Status"] || "";
+            let hazardousFlag = (firstTr["Is Hazardous"] === "true" || firstTr["Is Hazardous"] === true);
+            totalFreeDays = getFreeDays(trshpPeriods1, lineId, convertDate(firstTr["Start Time"]), flexString01, drayStatus, "", hazardousFlag);
         }
         
         if (totalFreeDays === 0 && sortedTrshp.length > 0) {
             let firstTr = sortedTrshp[0];
             let flexString01 = firstTr["Flex String 01"] || "";
             let drayStatus = firstTr["Dray Status"] || "";
-            totalFreeDays = getFreeDays(trshpPeriods1, lineId, convertDate(firstTr["Start Time"]), flexString01, drayStatus);
+            let hazardousFlag = (firstTr["Is Hazardous"] === "true" || firstTr["Is Hazardous"] === true);
+            totalFreeDays = getFreeDays(trshpPeriods1, lineId, convertDate(firstTr["Start Time"]), flexString01, drayStatus, "", hazardousFlag);
         }
 
         
@@ -1652,17 +1927,18 @@ function processAndDisplay1() {
         // ===================================================
         // حساب EXPRT Free من أول EXPRT (للخصم من السماح الكلي)
         // ===================================================
-		let exFreeForDeduction = 0;
-		for (let ex of exprtList) {
-			let obLocType = (ex["O/B Loc Type"] || "").trim().toUpperCase();
-			let isTruck = (obLocType === "TRUCK");
-			if (!isTruck) {
-				let exStart = convertDate(ex["Rule Start Time"] || "");
-				let flexString01 = ex["Flex String 01"] || "";  // ← استخدم Flex من EXPRT
-				exFreeForDeduction = getFreeDays(exprtPeriods1, lineId, exStart, flexString01, "");
-				break;
-			}
-		}
+        let exFreeForDeduction = 0;
+        for (let ex of exprtList) {
+            let obLocType = (ex["O/B Loc Type"] || "").trim().toUpperCase();
+            let isTruck = (obLocType === "TRUCK");
+            if (!isTruck) {
+                let exStart = convertDate(ex["Rule Start Time"] || "");
+                let flexString01 = ex["Flex String 01"] || "";
+                let hazardousFlag = (ex["Is Hazardous"] === "true" || ex["Is Hazardous"] === true);
+                exFreeForDeduction = getFreeDays(exprtPeriods1, lineId, exStart, flexString01, "", "", hazardousFlag);
+                break;
+            }
+        }
         
         // حساب إجمالي أيام EXPRT
         let totalExprtDays = 0;
@@ -1709,8 +1985,8 @@ function processAndDisplay1() {
             // ===================================================
             // الحصول على سماح TRSHP (مع مراعاة الاستثناء)
             // ===================================================
-			let key = trStart + "|" + trEnd;
-			let trFree = totalFreeDays;  // السماح الكلي في جميع الحالات
+            let key = trStart + "|" + trEnd;
+            let trFree = totalFreeDays;  // السماح الكلي في جميع الحالات
             // ===================================================
             
             for (let ex of exprtList) {
@@ -1727,7 +2003,7 @@ function processAndDisplay1() {
                 let exDays = overlapResult.net2;
                 let overlapDays = overlapResult.overlap;
                 
-                let flexString01 = tr["Flex String 01"] || "";
+                let flexString01 = ex["Flex String 01"] || tr["Flex String 01"] || "";
                 
                 // ===================================================
                 // حساب EXPRT Free (مع مراعاة الاستثناء)
@@ -1735,23 +2011,24 @@ function processAndDisplay1() {
                 let obLocType = (ex["O/B Loc Type"] || "").trim().toUpperCase();
                 let isTruck = (obLocType === "TRUCK");
 
+                let hazardousFlag = (ex["Is Hazardous"] === "true" || ex["Is Hazardous"] === true);
                 let exFree;
                 if (isExcl) {
                     // في حالة السماح المستقل، نعرض سماح EXPRT من الإعدادات
-                    exFree = getFreeDays(exprtPeriods1, lineId, exStart, flexString01, drayStatus);
+                    exFree = getFreeDays(exprtPeriods1, lineId, exStart, flexString01, drayStatus, "", hazardousFlag);
                 } else if (isTruck) {
                     exFree = 0;
                 } else {
-                    exFree = getFreeDays(exprtPeriods1, lineId, exStart, flexString01, drayStatus);
+                    exFree = getFreeDays(exprtPeriods1, lineId, exStart, flexString01, drayStatus, "", hazardousFlag);
                 }
                 // ===================================================
                 
                 // ===================================================
                 // خصم الأيام المشتركة من TRSHP و EXPRT
                 // ===================================================
-				let exNet = exDays - Math.min(exDays, exFree);
-				if (exNet < 0) exNet = 0;
-				// لا نخصم overlapDays من EXPRT
+                let exNet = exDays - Math.min(exDays, exFree);
+                if (exNet < 0) exNet = 0;
+                // لا نخصم overlapDays من EXPRT
 
                 let trNet = trNetPeriod - overlapDays;
                 if (trNet < 0) trNet = 0;
@@ -1762,7 +2039,14 @@ function processAndDisplay1() {
                 let method = isExcl ? "🚫 سماح مستقل" : "🔄 تداخل سماح";
                 
                 let equipType = container.equipmentType;
-                let size = equipType.toString().match(/^(\d+)/)?.[1] || "";
+                let sizeRaw = equipType.toString().trim();
+let size = sizeRaw.match(/^(\d+)/)?.[1] || "";
+
+if (!size) {
+    if (sizeRaw.startsWith("L5")) size = "45";
+    else if (sizeRaw.startsWith("L4")) size = "40";
+    else if (sizeRaw.startsWith("L2")) size = "20";
+}
                 let vesselName = tr["I/B Carrier Name"] || "";
                 let lineName = ex["Line ID"] || "";
                 
@@ -1862,6 +2146,7 @@ function processAndDisplay2() {
             
             let exFlexString01 = ex["Flex String 01"] || "";
             let exDrayStatus = ex["Dray Status"] || "";
+			let hazardousFlag = (ex["Is Hazardous"] === "true" || ex["Is Hazardous"] === true);
             
             // التحقق من Dray Status في EXPRT
             let isReturnDray = (exDrayStatus === "RETURN");
@@ -1884,7 +2169,8 @@ function processAndDisplay2() {
                     
                     let stDrayStatus = st["Dray Status"] || "";
                     let stFlexString01 = st["Flex String 01"] || "";
-                    stFree = getFreeDays(strgePeriods2, lineId, stStart, stFlexString01, stDrayStatus);
+					let stHazardousFlag = (st["Is Hazardous"] === "true" || st["Is Hazardous"] === true);
+                   stFree = getFreeDays(strgePeriods2, lineId, stStart, stFlexString01, stDrayStatus, "", stHazardousFlag);
                     
                     let overlapResult = calculateDaysWithOverlapRemoved(stStart, stEnd, exStart, exEnd);
                     stDaysAfterOverlap = overlapResult.net1;
@@ -1917,7 +2203,7 @@ if (isReturnDray) {
     exFree = 0;
 } else {
     // الحالات العادية: تطبق إعدادات السماح
-    exFree = getFreeDays(exprtPeriods2, lineId, exStart, exFlexString01, exDrayStatus);
+    exFree = getFreeDays(exprtPeriods2, lineId, exStart, exFlexString01, exDrayStatus, "", hazardousFlag);
 }
         
 let strgeNet = 0, exprtNet = 0;
@@ -1946,7 +2232,14 @@ if (isReturnDray) {
         
         let equipType = container.equipmentType;
         let isRefrigerated = st ? st["Is Refrigerated"] : (imprtData ? imprtData["Is Refrigerated"] : "");
-        let size = equipType.toString().match(/^(\d+)/)?.[1] || "";
+        let sizeRaw = equipType.toString().trim();
+let size = sizeRaw.match(/^(\d+)/)?.[1] || "";
+
+if (!size) {
+    if (sizeRaw.startsWith("L5")) size = "45";
+    else if (sizeRaw.startsWith("L4")) size = "40";
+    else if (sizeRaw.startsWith("L2")) size = "20";
+}
         let type = (isRefrigerated === "true" || equipType.includes("R1")) ? "RF" : "GP";
         // اسم السفينة من IMPRT فقط (حدث الدخول)
 		let vesselName = "";
@@ -1982,6 +2275,7 @@ if (isReturnDray) {
             "Line ID": lineId,
             "طريقة الحساب": method,
             "Flex String 01": flexString01,
+			"_isFlexTrue": flexString01 === "TRUE" || flexString01 === "true" || flexString01 === "1", // ← أضف هذا
             "نوع IMPRT": imprtType,
             "IMPRT Start": imStart,
             "IMPRT End": imEnd,
@@ -2008,6 +2302,7 @@ if (isReturnDray) {
     renderTable2("bodyTab2", currentData2, "searchTab2", "typeTab2", "statsTab2");
     updateHeaderFromDisplayData('2', currentData2);
 } // ← إغلاق الدالةAndDisplay2
+
 
 function processAndDisplay3() {
     console.log("=== processAndDisplay3 ===");
@@ -2067,14 +2362,25 @@ function processAndDisplay3() {
             let flexString01 = ex["Flex String 01"] || "";
             let drayStatus = ex["Dray Status"] || "";
             
-            let exFree = getFreeDays(exprtOnlyPeriods3, lineId, exStart, flexString01, drayStatus);
+            // ===== استخراج isHazardous من EXPRT =====
+            let hazardousFlag = (ex["Is Hazardous"] === "true" || ex["Is Hazardous"] === true);
+            
+            // ===== تعديل استدعاء getFreeDays مع إضافة isHazardous =====
+            let exFree = getFreeDays(exprtOnlyPeriods3, lineId, exStart, flexString01, drayStatus, "", hazardousFlag);
             
             let exNet = exDays - exFree;
             if (exNet < 0) exNet = 0;
             
             let equipType = container.equipmentType;
             let isRefrigerated = ex["Is Refrigerated"] || "";
-            let size = equipType.toString().match(/^(\d+)/)?.[1] || "";
+            let sizeRaw = equipType.toString().trim();
+let size = sizeRaw.match(/^(\d+)/)?.[1] || "";
+
+if (!size) {
+    if (sizeRaw.startsWith("L5")) size = "45";
+    else if (sizeRaw.startsWith("L4")) size = "40";
+    else if (sizeRaw.startsWith("L2")) size = "20";
+}
             let type = (isRefrigerated === "true" || equipType.includes("R1")) ? "RF" : "GP";
             let vesselName = ex["O/B Carrier Name"] || ex["I/B Carrier Name"] || "";
             let method = isExcl ? "🚫 سماح مستقل" : "🔄 تداخل سماح";
@@ -2090,12 +2396,14 @@ function processAndDisplay3() {
                 "Is OOG": isOOG,
                 "Is Refrigerated": isRefrigerated,
                 "flex_04": ex["Flex String 04"] || "",
+                "_isFlexTrue": flexString01 === "TRUE" || flexString01 === "true" || flexString01 === "1",
                 "Is Bundled": isBundled,
                 "Is Hazardous": isHazardous,
                 "IMDG Class": imdgClass,
                 "Type": type,
                 "Line ID": lineId,
                 "Flex String 01": flexString01,
+				"Dray Status": drayStatus,   // ← 🆕 أضف هذا السطر
                 "EXPRT Start": exStart,
                 "EXPRT End": exEnd,
                 "EXPRT Days": exDays,
@@ -2128,14 +2436,15 @@ function processAndDisplay4() {
         if (container.strge && container.strge["Freight Kind"] === "MTY") {
             if (container.exprt) continue;
             
-            if (!tempMap.has(id)) {
-                tempMap.set(id, {
-                    imprt: null,
-                    strgeList: [],
-                    lineId: container.lineId,
-                    equipmentType: container.equipmentType
-                });
-            }
+			if (!tempMap.has(id)) {
+				tempMap.set(id, {
+					imprt: null,
+					strgeList: [],
+					lineId: container.lineId,
+					equipmentType: container.equipmentType,
+					notes: container.notes || ""   // ← السطر الجديد
+				});
+			}
             let data = tempMap.get(id);
 			data.strgeList.push({
 				start: convertDate(container.strge["Start Time"] || ""),
@@ -2192,7 +2501,12 @@ for (let st of data.strgeList) {
                 if (days < 0) days = 0;
             }
         }
-        
+                // ===== خصم On-Hire =====
+        if (data.notes === "On-Hire") {
+            days = days - 1;
+            if (days < 0) days = 0;
+        }
+
         totalStrgeDays += days;
         if (!strgeStart || st.start < strgeStart) strgeStart = st.start;
         if (!strgeEnd || st.end > strgeEnd) strgeEnd = st.end;
@@ -2212,8 +2526,16 @@ for (let st of data.strgeList) {
     
     let totalNet = strgeNet;
         
-        let equipType = data.equipmentType;
-        let size = equipType.toString().match(/^(\d+)/)?.[1] || "";
+	let equipType = data.equipmentType;
+	let sizeRaw = equipType.toString().trim();
+	let size = sizeRaw.match(/^(\d+)/)?.[1] || "";
+
+	// معالجة الأنواع التي تبدأ بحروف
+	if (!size) {
+		if (sizeRaw.startsWith("L5")) size = "45";
+		else if (sizeRaw.startsWith("L4")) size = "40";
+		else if (sizeRaw.startsWith("L2")) size = "20";
+	}
         let type = "GP";
         let vesselName = data.imprt ? (data.imprt.rawData ? data.imprt.rawData["I/B Carrier Name"] || "" : "") : "";
 if (!vesselName) vesselName = "—";
@@ -2233,6 +2555,7 @@ if (!vesselName) vesselName = "—";
 			"flex_04": flexString04,  // ← تغيير المسمى
 			"Is Bundled": isBundled, "Is Hazardous": isHazardous, "IMDG Class": imdgClass,
 			"Type": type, "Line ID": lineId,
+			"Notes": (data.notes === "On-Hire") ? "On-Hire" : "",
 			"IMPRT Start": imStart, "IMPRT End": imEnd, "IMPRT Days": imDays,
 			"STRGE Start": strgeStart, "STRGE End": strgeEnd, "STRGE Days": totalStrgeDays,
 			"STRGE Free": strgeFree, "STRGE Net": strgeNet, "Total Net": totalNet,
@@ -2502,6 +2825,18 @@ function setPeriodsArray(tabId, category, periods) {
 }  // ← تأكد من وجود هذا القوس
 
 function displayPeriodsList(containerId, periods, tabId) {
+    // دالة مساعدة لتنسيق التاريخ للعرض (DD/MM/YYYY)
+    function formatDateToDisplay(dateStr) {
+        if (!dateStr) return '';
+        // إذا كان التاريخ بصيغة YYYY-MM-DD
+        let parts = dateStr.split('-');
+        if (parts.length === 3 && parts[0].length === 4) {
+            return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+        // إذا كان بصيغة أخرى، اعرضه كما هو
+        return dateStr;
+    }
+
     let sorted = sortPeriods([...periods]);
     let html = `<table style="width:100%; font-size:12px; border:1px solid #ddd;">
         <thead>
@@ -2510,6 +2845,8 @@ function displayPeriodsList(containerId, periods, tabId) {
                 <th>Line ID</th>
                 <th>Dray Status</th>
                 <th>Flex String 01</th>
+                <th>Freight Kind</th>
+                <th>Hazardous</th>
                 <th>تاريخ البدء</th>
                 <th>تاريخ النهاية</th>
                 <th>أيام السماح</th>
@@ -2521,14 +2858,15 @@ function displayPeriodsList(containerId, periods, tabId) {
     sorted.forEach(period => {
         let catClass = period.category === "TRSHP" ? "trshp" : (period.category === "EXPRT" ? "exprt" : "strge");
         let endDisplay = period.endDate || "مفتوحة";
+        let hazardVal = (period.isHazardous || "").toLowerCase();
         
         html += `<tr>
             <td><span class="category-badge ${catClass}">${period.category}</span></td>
             <td>
-<select class="period-line-${tabId}" data-id="${period.id}" data-cat="${period.category}" style="padding:6px 10px; border-radius:6px;">
-    <option value="*" ${period.lineId === "*" ? "selected" : ""}>* (الكل)</option>
-    ${masterLinesList.map(line => `<option value="${line}" ${period.lineId === line ? "selected" : ""}>${line}</option>`).join('')}
-</select>
+                <select class="period-line-${tabId}" data-id="${period.id}" data-cat="${period.category}" style="padding:6px 10px; border-radius:6px;">
+                    <option value="*" ${period.lineId === "*" ? "selected" : ""}>* (الكل)</option>
+                    ${masterLinesList.map(line => `<option value="${line}" ${period.lineId === line ? "selected" : ""}>${line}</option>`).join('')}
+                </select>
             </td>
             <td>
                 <select class="period-dray-${tabId}" data-id="${period.id}" data-cat="${period.category}" style="padding:6px 10px; border-radius:6px;">
@@ -2545,17 +2883,38 @@ function displayPeriodsList(containerId, periods, tabId) {
                     <option value="FALSE" ${period.flexString01 === "FALSE" ? "selected" : ""}>FALSE (صادر عادي)</option>
                 </select>
             </td>
-            <td><input type="date" class="period-start-${tabId}" data-id="${period.id}" data-cat="${period.category}" value="${period.startDate || ''}" style="width:130px;"></td>
+            <td>
+                <select class="period-freight-${tabId}" data-id="${period.id}" data-cat="${period.category}" style="padding:6px 10px; border-radius:6px;">
+                    <option value="">الكل</option>
+                    <option value="FCL" ${period.freightKind === "FCL" ? "selected" : ""}>FCL (حاوية كاملة)</option>
+                    <option value="MTY" ${period.freightKind === "MTY" ? "selected" : ""}>MTY (فارغة)</option>
+                </select>
+            </td>
+            <td>
+                <select class="period-hazard-${tabId}" data-id="${period.id}" data-cat="${period.category}" style="padding:6px 10px; border-radius:6px;">
+                    <option value="" ${hazardVal === "" ? "selected" : ""}>الكل</option>
+                    <option value="true" ${hazardVal === "true" ? "selected" : ""}>نعم (خطر)</option>
+                    <option value="false" ${hazardVal === "false" ? "selected" : ""}>لا (غير خطر)</option>
+                </select>
+            </td>
+            <td>
+                <input type="date" class="period-start-${tabId}" data-id="${period.id}" data-cat="${period.category}" value="${period.startDate || ''}" style="width:130px;">
+                <span style="display:block; font-size:10px; color:#6c757d; margin-top:2px;">
+                    ${formatDateToDisplay(period.startDate)}
+                </span>
+            </td>
             <td style="background:#f8f9fa;">${endDisplay}</td>
-            <td><input type="number" class="period-days-${tabId}" data-id="${period.id}" data-cat="${period.category}" value="${period.freeDays}" style="width:80px;"><td>
+            <td><input type="number" class="period-days-${tabId}" data-id="${period.id}" data-cat="${period.category}" value="${period.freeDays}" style="width:80px;"></td>
             <td><button onclick="window.deletePeriod('${tabId}', '${period.category}', ${period.id})" class="delete-btn">✖ حذف</button></td>
         </tr>`;
     });
     
-    html += `</tbody></tr>`;
+    html += `</tbody></table>`;
     document.getElementById(containerId).innerHTML = html;
     
+    // ===== إضافة مستمعي الأحداث =====
     setTimeout(() => {
+        // مستمع تغيير Line ID
         document.querySelectorAll(`.period-line-${tabId}`).forEach(sel => {
             sel.onchange = e => {
                 let id = parseInt(e.target.dataset.id);
@@ -2570,6 +2929,7 @@ function displayPeriodsList(containerId, periods, tabId) {
             };
         });
         
+        // مستمع تغيير Dray Status
         document.querySelectorAll(`.period-dray-${tabId}`).forEach(sel => {
             sel.onchange = e => {
                 let id = parseInt(e.target.dataset.id);
@@ -2584,6 +2944,7 @@ function displayPeriodsList(containerId, periods, tabId) {
             };
         });
         
+        // مستمع تغيير Flex String 01
         document.querySelectorAll(`.period-flex-${tabId}`).forEach(sel => {
             sel.onchange = e => {
                 let id = parseInt(e.target.dataset.id);
@@ -2598,6 +2959,37 @@ function displayPeriodsList(containerId, periods, tabId) {
             };
         });
         
+        // مستمع تغيير Freight Kind
+        document.querySelectorAll(`.period-freight-${tabId}`).forEach(sel => {
+            sel.onchange = e => {
+                let id = parseInt(e.target.dataset.id);
+                let category = e.target.dataset.cat;
+                let periodsArr = getPeriodsArray(tabId, category);
+                let p = periodsArr.find(p => p.id === id);
+                if (p) {
+                    p.freightKind = e.target.value;
+                    setPeriodsArray(tabId, category, periodsArr);
+                    refreshPeriodsDisplay(tabId);
+                }
+            };
+        });
+        
+        // ===== مستمع تغيير Hazardous (جديد) =====
+        document.querySelectorAll(`.period-hazard-${tabId}`).forEach(sel => {
+            sel.onchange = e => {
+                let id = parseInt(e.target.dataset.id);
+                let category = e.target.dataset.cat;
+                let periodsArr = getPeriodsArray(tabId, category);
+                let p = periodsArr.find(p => p.id === id);
+                if (p) {
+                    p.isHazardous = e.target.value;
+                    setPeriodsArray(tabId, category, periodsArr);
+                    refreshPeriodsDisplay(tabId);
+                }
+            };
+        });
+        
+        // مستمع تغيير تاريخ البدء
         document.querySelectorAll(`.period-start-${tabId}`).forEach(inp => {
             inp.onchange = e => {
                 let id = parseInt(e.target.dataset.id);
@@ -2612,6 +3004,7 @@ function displayPeriodsList(containerId, periods, tabId) {
             };
         });
         
+        // مستمع تغيير أيام السماح
         document.querySelectorAll(`.period-days-${tabId}`).forEach(inp => {
             inp.onchange = e => {
                 let id = parseInt(e.target.dataset.id);
@@ -2626,7 +3019,7 @@ function displayPeriodsList(containerId, periods, tabId) {
             };
         });
     }, 100);
-}
+}	
 
 function refreshPeriodsDisplay(tabId) {
     if (tabId === '1') {
@@ -2712,6 +3105,7 @@ function addNewPeriod(tabId, category) {
         lineId: defaultLineId,
         drayStatus: defaultDrayStatus,
         flexString01: defaultFlex,
+		freightKind: "",        // ← أضف هذا
         startDate: lastStart,
         endDate: "",
         freeDays: 0
@@ -3344,6 +3738,21 @@ function printReport(tabId, title) {
         hour: '2-digit',
         minute: '2-digit'
     });
+	
+	    // ===== معلومات إضافية لتبويب 8 =====
+    let extraInfo = "";
+    if (tabId === 'tab8') {
+        let orderNumber = document.getElementById("headerOrderNumber")?.innerText || "—";
+        let lineOp = document.getElementById("headerLineOp")?.innerText || "—";
+        let count = document.getElementById("headerCount")?.innerText || "0";
+        extraInfo = `
+            <div style="text-align: right; margin-bottom: 10px; font-size: 12px; direction: rtl; background: #f8f9fa; padding: 8px; border-radius: 4px;">
+                <div>📋 <strong>رقم الأمر:</strong> ${orderNumber}</div>
+                <div>🚢 <strong>الخط المشغل:</strong> ${lineOp}</div>
+                <div>📦 <strong>عدد الحاويات:</strong> ${count}</div>
+            </div>
+        `;
+    }
     
     let printWindow = window.open('', '_blank', 'width=1200,height=800');
     if (!printWindow) {
@@ -3508,6 +3917,8 @@ function printReport(tabId, title) {
             </div>
          
             <div class="report-date">📅 تاريخ الطباعة: ${currentDate}</div>
+            
+            ${extraInfo}
             
             <div id="statsPrint"></div>
             <div id="tablePrint"></div>
@@ -3961,12 +4372,14 @@ function renderAdvancedStatsTab2(data) {
     if (!data || data.length === 0) {
         return `<div style="padding:20px; text-align:center;">لا توجد بيانات</div>`;
     }
-    
-    // ========== تجميع الحاويات الفريدة حسب رقم الحاوية ==========
+
+    // ========== تجميع الحاويات الفريدة ==========
     let uniqueContainers = new Map();
-    
+
     for (let item of data) {
         let containerNo = item["Container No."];
+        if (!containerNo) continue;
+
         if (!uniqueContainers.has(containerNo)) {
             uniqueContainers.set(containerNo, {
                 "Container No.": containerNo,
@@ -3974,93 +4387,83 @@ function renderAdvancedStatsTab2(data) {
                 "Is Refrigerated": item["Is Refrigerated"],
                 "Is OOG": item["Is OOG"],
                 "Is Hazardous": item["Is Hazardous"],
-                "Flex String 01": item["Flex String 01"],
+                "Flex String 01": item["Flex String 01"] || "",
                 "Dray Status": item["Dray Status"] || "",
                 "STRGE Net": item["STRGE Net"] || 0,
                 "EXPRT Net": item["EXPRT Net"] || 0,
-                "EXPRT Days": item["EXPRT Days"] || 0
+                "EXPRT Days": item["EXPRT Days"] || 0,
+                "_isFlexTrue": item["_isFlexTrue"] || false
             });
         } else {
-            // دمج القيم إذا وجدت أكثر من فترة لنفس الحاوية
             let existing = uniqueContainers.get(containerNo);
             existing["STRGE Net"] += item["STRGE Net"] || 0;
             existing["EXPRT Net"] += item["EXPRT Net"] || 0;
             existing["EXPRT Days"] += item["EXPRT Days"] || 0;
+            if (item["_isFlexTrue"] === true) {
+                existing["_isFlexTrue"] = true;
+                existing["Flex String 01"] = "TRUE";
+            }
         }
     }
-    
+
     let uniqueData = Array.from(uniqueContainers.values());
-    
+
+    // ========== حساب الإحصائيات ==========
     let totalStrgeNet = uniqueData.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
     let totalExprtNet = uniqueData.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
-    
-    // Flex String 01
-    let flexTrueContainers = uniqueData.filter(i => i["Flex String 01"] === "TRUE");
+
+    let flexTrueContainers = uniqueData.filter(i => i["_isFlexTrue"] === true);
     let flexTrueExprtNet = flexTrueContainers.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
     let flexTrueCount = flexTrueContainers.length;
-    
-    let flexFalseContainers = uniqueData.filter(i => i["Flex String 01"] === "FALSE");
+
+    let flexFalseContainers = uniqueData.filter(i => i["_isFlexTrue"] !== true);
     let flexFalseExprtNet = flexFalseContainers.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
     let flexFalseCount = flexFalseContainers.length;
-    
-    // Dray Status
-    let exprtNoDray = uniqueData.filter(i => (i["Dray Status"] || "") === "");
-    let exprtNoDrayNet = exprtNoDray.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
-    let exprtNoDrayCount = exprtNoDray.length;
-    
-    let exprtWithDray = uniqueData.filter(i => (i["Dray Status"] || "") !== "");
-    let exprtWithDrayNet = exprtWithDray.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
-    let exprtWithDrayCount = exprtWithDray.length;
-    
-    // OOG و Hazardous
-    let oogContainers = uniqueData.filter(i => i["Is OOG"] === "true");
-    let oogExprtNet = oogContainers.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
-    let oogCount = oogContainers.length;
-    
-    let hazardousContainers = uniqueData.filter(i => i["Is Hazardous"] === "true");
-    let hazardousExprtNet = hazardousContainers.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
-    let hazardousCount = hazardousContainers.length;
-    
+
+    let totalExprtNetAfterDeduction = totalExprtNet - flexTrueExprtNet;
+
     let refrigeratedContainers = uniqueData.filter(i => i["Is Refrigerated"] === "true");
     let rfExprtDays = refrigeratedContainers.reduce((s, i) => s + (i["EXPRT Days"] || 0), 0);
-    let totalCount = uniqueData.length;  // ← عدد فريد وليس مكرر
-    
-    let size20Containers = uniqueData.filter(i => i["Size"]?.toString().startsWith("2"));
-    let size40Containers = uniqueData.filter(i => i["Size"]?.toString().startsWith("4"));
-    
+    let totalCount = uniqueData.length;
+
+	let size20Containers = uniqueData.filter(i => {
+		let s = (i["Size"] || "").toString().trim();
+		return s.startsWith("2");
+	});
+	let size40Containers = uniqueData.filter(i => {
+		let s = (i["Size"] || "").toString().trim();
+		return s.startsWith("4") || s.startsWith("95");
+	});
     let size20Count = size20Containers.length;
     let size40Count = size40Containers.length;
     let size20StrgeNet = size20Containers.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
     let size40StrgeNet = size40Containers.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
     let size20ExprtNet = size20Containers.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
     let size40ExprtNet = size40Containers.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
-    
-    let refrigerated40 = refrigeratedContainers.filter(i => i["Size"]?.toString().startsWith("4"));
+
+	let refrigerated40 = refrigeratedContainers.filter(i => {
+		let s = (i["Size"] || "").toString().trim();
+		return s.startsWith("4") || s.startsWith("95");
+	});
     let refrigerated40Count = refrigerated40.length;
     let refrigerated40Days = refrigerated40.reduce((s, i) => s + (i["EXPRT Days"] || 0), 0);
-    
-    let totalExprtNetAfterDeduction = totalExprtNet - flexTrueExprtNet;
-    
-    // تفاصيل Dray Status حسب المقاس
-    let size20NoDray = exprtNoDray.filter(i => i["Size"]?.toString().startsWith("2"));
-    let size40NoDray = exprtNoDray.filter(i => i["Size"]?.toString().startsWith("4"));
-    let size20NoDrayNet = size20NoDray.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
-    let size40NoDrayNet = size40NoDray.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
-    
-    let size20WithDray = exprtWithDray.filter(i => i["Size"]?.toString().startsWith("2"));
-    let size40WithDray = exprtWithDray.filter(i => i["Size"]?.toString().startsWith("4"));
-    let size20WithDrayNet = size20WithDray.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
-    let size40WithDrayNet = size40WithDray.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
-    
-    // تفاصيل Flex حسب المقاس
-    let flexTrue20 = flexTrueContainers.filter(i => i["Size"]?.toString().startsWith("2"));
-    let flexTrue40 = flexTrueContainers.filter(i => i["Size"]?.toString().startsWith("4"));
+
+	let flexTrue20 = flexTrueContainers.filter(i => {
+		let s = (i["Size"] || "").toString().trim();
+		return s.startsWith("2");
+	});
+	let flexTrue40 = flexTrueContainers.filter(i => {
+		let s = (i["Size"] || "").toString().trim();
+		return s.startsWith("4") || s.startsWith("95");
+	});
     let flexTrue20Net = flexTrue20.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
     let flexTrue40Net = flexTrue40.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
-    
+
+    // ========== العرض ==========
     return `
-        <div style="display: flex; gap: 15px; margin: 0 25px 20px 25px; flex-wrap: wrap;">
-            
+        <div style="display: flex; gap: 15px; margin: 0 0 20px 0; flex-wrap: wrap;">
+
+            <!-- STRGE -->
             <div style="flex: 1; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 12px; padding: 15px; text-align: center; color: white;">
                 <div style="font-size: 14px;">📦 إجمالي STRGE</div>
                 <div style="font-size: 28px; font-weight: bold;">${totalStrgeNet}</div>
@@ -4070,17 +4473,42 @@ function renderAdvancedStatsTab2(data) {
                     <div>📦 40 قدم: ${size40StrgeNet} يوم</div>
                 </div>
             </div>
-            
+
+            <!-- EXPRT (بعد خصم TRUE) -->
             <div style="flex: 1; background: linear-gradient(135deg, #f093fb, #f5576c); border-radius: 12px; padding: 15px; text-align: center; color: white;">
-                <div style="font-size: 14px;">📤 إجمالي EXPRT</div>
-                <div style="font-size: 28px; font-weight: bold;">${totalExprtNet}</div>
+                <div style="font-size: 14px;">📤 إجمالي EXPRT (بعد الخصم)</div>
+                <div style="font-size: 28px; font-weight: bold;">${totalExprtNetAfterDeduction}</div>
                 <div style="font-size: 12px;">صافي أيام التصدير</div>
                 <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.3); font-size: 12px;">
                     <div>📦 20 قدم: ${size20ExprtNet} يوم</div>
                     <div>📦 40 قدم: ${size40ExprtNet} يوم</div>
+                    ${flexTrueCount > 0 ? `
+                        <div style="margin-top: 5px; background: rgba(255,255,255,0.15); padding: 4px 8px; border-radius: 6px;">
+                            ⭐ TRUE (خاص): ${flexTrueExprtNet} يوم (${flexTrueCount} حاوية)
+                            <span style="font-size: 10px;">20:${flexTrue20Net} | 40:${flexTrue40Net}</span>
+                        </div>
+                    ` : ''}
                 </div>
             </div>
-            
+
+            <!-- بطاقة Flex String 01 -->
+            <div style="flex: 1; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <div style="background: #ff6b6b; color: white; padding: 12px; text-align: center; font-weight: bold;">
+                    ⭐ Re Storage
+                </div>
+                <div style="padding: 15px;">
+                    <div style="display: flex; gap: 10px;">
+                        <div style="flex:1; background:#ffebee; border-radius:8px; padding:8px; text-align:center;">
+                            <div>⭐ TRUE (خاص)</div>
+                            <div style="font-size:20px; font-weight:bold; color:#ff6b6b;">${flexTrueExprtNet}</div>
+                            <div>${flexTrueCount} حاوية</div>
+                            <div style="font-size:10px;">20:${flexTrue20Net} | 40:${flexTrue40Net}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ثلاجه -->
             <div style="flex: 1; background: linear-gradient(135deg, #4facfe, #00f2fe); border-radius: 12px; padding: 15px; text-align: center; color: white;">
                 <div style="font-size: 14px;">❄️ أيام EXPRT (ثلاجه)</div>
                 <div style="font-size: 28px; font-weight: bold;">${rfExprtDays}</div>
@@ -4090,14 +4518,17 @@ function renderAdvancedStatsTab2(data) {
                     <div>📦 40 قدم: ${refrigerated40Count} (${refrigerated40Days} يوم)</div>
                 </div>
             </div>
-            
+
+            <!-- الإجمالي -->
             <div style="flex: 1; background: linear-gradient(135deg, #43e97b, #38f9d7); border-radius: 12px; padding: 15px; text-align: center; color: white;">
                 <div style="font-size: 14px;">📦 إجمالي الحاويات</div>
                 <div style="font-size: 28px; font-weight: bold;">${totalCount}</div>
-                <div style="font-size: 12px;">حاوية</div>
+                <div style="font-size: 12px;">حاوية فريدة</div>
                 <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.3); font-size: 12px;">
-                    <div>📦 20 قدم: ${size20Count} حاوية</div>
-                    <div>📦 40 قدم: ${size40Count} حاوية</div>
+                    <div>📦 20 قدم: ${size20Count}</div>
+                    <div>📦 40 قدم: ${size40Count}</div>
+                    <div>⭐ TRUE: ${flexTrueCount}</div>
+                    <div>❄️ مبردة: ${refrigeratedContainers.length}</div>
                 </div>
             </div>
         </div>
@@ -4105,72 +4536,122 @@ function renderAdvancedStatsTab2(data) {
 }
 
 function renderAdvancedStatsTab3(data) {
-    let totalExprtNet = data.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
+    if (!data || data.length === 0) {
+        return `<div style="padding:20px; text-align:center;">لا توجد بيانات</div>`;
+    }
     
-    // Flex String 01
-    let flexTrueContainers = data.filter(i => i["Flex String 01"] === "TRUE");
+    // ===== 🆕 استبعاد صفوف Dray Status = RETURN من الإحصائيات =====
+    data = data.filter(item => (item["Dray Status"] || "") !== "RETURN");
+    
+    if (data.length === 0) {
+        return `<div style="padding:20px; text-align:center;">لا توجد بيانات EXPRT صالحة للحساب</div>`;
+    }
+
+    // ========== تجميع الحاويات الفريدة ==========
+    let uniqueContainers = new Map();
+
+    for (let item of data) {
+        let containerNo = item["Container No."];
+        if (!containerNo) continue;
+
+        if (!uniqueContainers.has(containerNo)) {
+            uniqueContainers.set(containerNo, {
+                "Container No.": containerNo,
+                "Size": item["Size"],
+                "Is Refrigerated": item["Is Refrigerated"],
+                "Is OOG": item["Is OOG"],
+                "Is Hazardous": item["Is Hazardous"],
+                "Flex String 01": item["Flex String 01"] || "",
+                "Dray Status": item["Dray Status"] || "",
+                "EXPRT Net": item["EXPRT Net"] || 0,
+                "EXPRT Days": item["EXPRT Days"] || 0,
+                "_isFlexTrue": item["_isFlexTrue"] || false
+            });
+        } else {
+            let existing = uniqueContainers.get(containerNo);
+            existing["EXPRT Net"] += item["EXPRT Net"] || 0;
+            existing["EXPRT Days"] += item["EXPRT Days"] || 0;
+            if (item["_isFlexTrue"] === true) {
+                existing["_isFlexTrue"] = true;
+                existing["Flex String 01"] = "TRUE";
+            }
+        }
+    }
+
+    let uniqueData = Array.from(uniqueContainers.values());
+
+    // ========== حساب الإحصائيات ==========
+    let totalExprtNet = uniqueData.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
+
+    let flexTrueContainers = uniqueData.filter(i => i["_isFlexTrue"] === true);
     let flexTrueExprtNet = flexTrueContainers.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
     let flexTrueCount = flexTrueContainers.length;
-    
-    let flexFalseContainers = data.filter(i => i["Flex String 01"] === "FALSE");
+
+    let flexFalseContainers = uniqueData.filter(i => i["_isFlexTrue"] !== true);
     let flexFalseExprtNet = flexFalseContainers.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
     let flexFalseCount = flexFalseContainers.length;
-    
-    // Dray Status
-    let exprtNoDray = data.filter(i => (i["Dray Status"] || "") === "");
-    let exprtNoDrayNet = exprtNoDray.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
-    let exprtNoDrayCount = exprtNoDray.length;
-    
-    let exprtWithDray = data.filter(i => (i["Dray Status"] || "") !== "");
-    let exprtWithDrayNet = exprtWithDray.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
-    let exprtWithDrayCount = exprtWithDray.length;
-    
-    // OOG و Hazardous
-    let oogContainers = data.filter(i => i["Is OOG"] === "true");
-    let oogExprtNet = oogContainers.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
-    let oogCount = oogContainers.length;
-    
-    let hazardousContainers = data.filter(i => i["Is Hazardous"] === "true");
-    let hazardousExprtNet = hazardousContainers.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
-    let hazardousCount = hazardousContainers.length;
-    
-    let refrigeratedContainers = data.filter(i => i["Is Refrigerated"] === "true");
+
+    let totalExprtNetAfterDeduction = totalExprtNet - flexTrueExprtNet;
+
+    let refrigeratedContainers = uniqueData.filter(i => i["Is Refrigerated"] === "true");
     let rfExprtDays = refrigeratedContainers.reduce((s, i) => s + (i["EXPRT Days"] || 0), 0);
-    let totalCount = data.length;
-    
-    let size20Containers = data.filter(i => i["Size"]?.toString().startsWith("2"));
-    let size40Containers = data.filter(i => i["Size"]?.toString().startsWith("4"));
-    
+    let totalCount = uniqueData.length;
+
+    let size20Containers = uniqueData.filter(i => i["Size"]?.toString().startsWith("2"));
+    let size40Containers = uniqueData.filter(i => i["Size"]?.toString().startsWith("4"));
     let size20Count = size20Containers.length;
     let size40Count = size40Containers.length;
     let size20ExprtNet = size20Containers.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
     let size40ExprtNet = size40Containers.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
-    
+
     let refrigerated40 = refrigeratedContainers.filter(i => i["Size"]?.toString().startsWith("4"));
     let refrigerated40Count = refrigerated40.length;
     let refrigerated40Days = refrigerated40.reduce((s, i) => s + (i["EXPRT Days"] || 0), 0);
-    
-    // تفاصيل Flex حسب المقاس
+
     let flexTrue20 = flexTrueContainers.filter(i => i["Size"]?.toString().startsWith("2"));
     let flexTrue40 = flexTrueContainers.filter(i => i["Size"]?.toString().startsWith("4"));
     let flexTrue20Net = flexTrue20.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
     let flexTrue40Net = flexTrue40.reduce((s, i) => s + (i["EXPRT Net"] || 0), 0);
-    
-    let totalExprtNetAfterDeduction = totalExprtNet - flexTrueExprtNet;
-    
+
+    // ========== العرض ==========
     return `
-        <div style="display: flex; gap: 15px; margin: 0 25px 20px 25px; flex-wrap: wrap;">
-            
+        <div style="display: flex; gap: 15px; margin: 0 0 20px 0; flex-wrap: wrap;">
+
+            <!-- EXPRT (بعد خصم TRUE) -->
             <div style="flex: 1; background: linear-gradient(135deg, #f093fb, #f5576c); border-radius: 12px; padding: 15px; text-align: center; color: white;">
-                <div style="font-size: 14px;">📤 إجمالي EXPRT</div>
-                <div style="font-size: 28px; font-weight: bold;">${totalExprtNet}</div>
+                <div style="font-size: 14px;">📤 إجمالي EXPRT (بعد الخصم)</div>
+                <div style="font-size: 28px; font-weight: bold;">${totalExprtNetAfterDeduction}</div>
                 <div style="font-size: 12px;">صافي أيام التصدير</div>
                 <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.3); font-size: 12px;">
                     <div>📦 20 قدم: ${size20ExprtNet} يوم</div>
                     <div>📦 40 قدم: ${size40ExprtNet} يوم</div>
+                    ${flexTrueCount > 0 ? `
+                        <div style="margin-top: 5px; background: rgba(255,255,255,0.15); padding: 4px 8px; border-radius: 6px;">
+                            ⭐ TRUE (خاص): ${flexTrueExprtNet} يوم (${flexTrueCount} حاوية)
+                            <span style="font-size: 10px;">20:${flexTrue20Net} | 40:${flexTrue40Net}</span>
+                        </div>
+                    ` : ''}
                 </div>
             </div>
-            
+
+            <!-- بطاقة Flex String 01 -->
+            <div style="flex: 1; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <div style="background: #ff6b6b; color: white; padding: 12px; text-align: center; font-weight: bold;">
+                    ⭐ ReExport_Storage
+                </div>
+                <div style="padding: 15px;">
+                    <div style="display: flex; gap: 10px;">
+                        <div style="flex:1; background:#ffebee; border-radius:8px; padding:8px; text-align:center;">
+                            <div>⭐ TRUE (خاص)</div>
+                            <div style="font-size:20px; font-weight:bold; color:#ff6b6b;">${flexTrueExprtNet}</div>
+                            <div>${flexTrueCount} حاوية</div>
+                            <div style="font-size:10px;">20:${flexTrue20Net} | 40:${flexTrue40Net}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ثلاجه -->
             <div style="flex: 1; background: linear-gradient(135deg, #4facfe, #00f2fe); border-radius: 12px; padding: 15px; text-align: center; color: white;">
                 <div style="font-size: 14px;">❄️ أيام EXPRT (ثلاجه)</div>
                 <div style="font-size: 28px; font-weight: bold;">${rfExprtDays}</div>
@@ -4180,14 +4661,17 @@ function renderAdvancedStatsTab3(data) {
                     <div>📦 40 قدم: ${refrigerated40Count} (${refrigerated40Days} يوم)</div>
                 </div>
             </div>
-            
+
+            <!-- الإجمالي -->
             <div style="flex: 1; background: linear-gradient(135deg, #43e97b, #38f9d7); border-radius: 12px; padding: 15px; text-align: center; color: white;">
                 <div style="font-size: 14px;">📦 إجمالي الحاويات</div>
                 <div style="font-size: 28px; font-weight: bold;">${totalCount}</div>
-                <div style="font-size: 12px;">حاوية</div>
+                <div style="font-size: 12px;">حاوية فريدة</div>
                 <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.3); font-size: 12px;">
-                    <div>📦 20 قدم: ${size20Count} حاوية</div>
-                    <div>📦 40 قدم: ${size40Count} حاوية</div>
+                    <div>📦 20 قدم: ${size20Count}</div>
+                    <div>📦 40 قدم: ${size40Count}</div>
+                    <div>⭐ TRUE: ${flexTrueCount}</div>
+                    <div>❄️ مبردة: ${refrigeratedContainers.length}</div>
                 </div>
             </div>
         </div>
@@ -4216,8 +4700,14 @@ function renderAdvancedStatsTab4(data) {
     let hazardousStrgeNet = hazardousContainers.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
     let hazardousCount = hazardousContainers.length;
     
-    let size20Containers = data.filter(i => i["Size"]?.toString().startsWith("2"));
-    let size40Containers = data.filter(i => i["Size"]?.toString().startsWith("4"));
+	let size20Containers = data.filter(i => {
+		let s = (i["Size"] || "").toString().trim();
+		return s.startsWith("2");
+	});
+	let size40Containers = data.filter(i => {
+		let s = (i["Size"] || "").toString().trim();
+		return s.startsWith("4") || s.startsWith("95");
+	});
     
     let size20Count = size20Containers.length;
     let size40Count = size40Containers.length;
@@ -4243,26 +4733,6 @@ function renderAdvancedStatsTab4(data) {
                     <div>📦 40 قدم: ${size40StrgeNet} يوم</div>
                     <div style="margin-top: 5px;">📐 OOG: ${oogStrgeNet} يوم (${oogCount})</div>
                     <div>⚠️ Hazardous: ${hazardousStrgeNet} يوم (${hazardousCount})</div>
-                </div>
-            </div>
-            
-            <!-- بطاقة 2: Flex String 01 -->
-            <div style="flex: 1; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                <div style="background: #ff6b6b; color: white; padding: 12px; text-align: center; font-weight: bold;">⭐ Flex String 01</div>
-                <div style="padding: 15px;">
-                    <div style="display: flex; gap: 10px;">
-                        <div style="flex:1; background:#ffebee; border-radius:8px; padding:8px; text-align:center;">
-                            <div>⭐ TRUE (خاص)</div>
-                            <div style="font-size:20px; font-weight:bold; color:#ff6b6b;">${flexTrueStrgeNet}</div>
-                            <div>${flexTrueCount} حاوية</div>
-                            <div style="font-size:10px;">20:${flexTrue20Net} | 40:${flexTrue40Net}</div>
-                        </div>
-                        <div style="flex:1; background:#e3f2fd; border-radius:8px; padding:8px; text-align:center;">
-                            <div>📋 FALSE (عادي)</div>
-                            <div style="font-size:20px; font-weight:bold; color:#4facfe;">${flexFalseStrgeNet}</div>
-                            <div>${flexFalseCount} حاوية</div>
-                        </div>
-                    </div>
                 </div>
             </div>
             
@@ -4352,6 +4822,13 @@ function processAndDisplay5() {
             
             let obLocType = tr["O/B Loc Type"] || "";  // نستخدم O/B Loc Type للتصنيف
             
+            // ===== قراءة Freight Kind من عدة أسماء أعمدة محتملة =====
+            let freightKind = tr["Freight Kind"] || tr["Frght Kind"] || tr["FreightKind"] || tr["Freight_Kind"] || "";
+            // إذا كانت القيمة "Empty" أو "EMPTY"، حوّلها إلى "MTY"
+            if (freightKind && freightKind.toUpperCase() === "EMPTY") {
+                freightKind = "MTY";
+            }
+            
             let periodData = {
                 rawData: tr,
                 start: trStart,
@@ -4363,7 +4840,8 @@ function processAndDisplay5() {
                 flexString01: tr["Flex String 01"] || "",
                 flexString04: tr["Flex String 04"] || "",
                 obCarrierName: tr["O/B Carrier Name"] || "",
-                obCarrierATD: tr["O/B Carrier ATD"] || tr["O/B Carrier ATA"] || ""
+                obCarrierATD: tr["O/B Carrier ATD"] || tr["O/B Carrier ATA"] || "",
+                freightKind: freightKind  // ← تأكد من وجود هذا السطر
             };
             
             if (obLocType === "TRUCK") {
@@ -4395,88 +4873,90 @@ function processAndDisplay5() {
         let lineId = container.lineId || "";
         let isExcl = isExcluded(lineId, excludeLines5);
         
-        // حساب أيام السماح الكلي (مرة واحدة) من أول فترة (TRUCK)
+        // ===== حساب أيام السماح الكلي مع تمرير freightKind =====
         let firstPeriod = sortedPeriods[0];
-        let freeDays = getFreeDays(trshpOnlyPeriods5, lineId, firstPeriod.start, firstPeriod.flexString01, "");
+        let freightKind = firstPeriod.freightKind || "";
+        
+        // ==== تشخيص: طباعة قيمة freightKind للحاوية ====
+        console.log(`🔍 حاوية ${id}: Freight Kind = "${freightKind}" (طول النص: ${freightKind.length})`);
+        
+        let freeDays = getFreeDays(trshpOnlyPeriods5, lineId, firstPeriod.start, firstPeriod.flexString01, "", freightKind);
+        
+        console.log(`🔍 السماح المحسوب للحاوية ${id}: ${freeDays} يوم`);
         
         // ========== توزيع السماح على الفترات بالتسلسل (TRUCK أولاً ثم VESSEL) ==========
         let remainingFree = freeDays;
         
-for (let i = 0; i < sortedPeriods.length; i++) {
-    let period = sortedPeriods[i];
-    let days = period.days;
-    
-    let deduction = Math.min(days, remainingFree);
-    let netDays = days - deduction;
-    if (netDays < 0) netDays = 0;
-    remainingFree -= deduction;
-    
-    let equipType = container.equipmentType;
-    let size = equipType.toString().match(/^(\d+)/)?.[1] || "";
-    let isRefrigerated = period.rawData["Is Refrigerated"] || "";
-    let type = (isRefrigerated === "true" || equipType.includes("R1")) ? "RF" : "GP";
-    let isOOG = period.rawData["Is OOG"] || "";
-    let isBundled = period.rawData["Is Bundled"] || "";
-    let isHazardous = period.rawData["Is Hazardous"] || "";
-    let imdgClass = period.rawData["IMDG Class"] || "";
-    let method = isExcl ? "🚫 سماح مستقل" : "🔄 سماح متسلسل";
-    let displayType = period.obLocType || period.ibLocType || "—";
-    
-    // ========== أضف هذه الأسطر هنا ==========
-let hasMultiplePeriods = (sortedPeriods.length > 1);
+        for (let i = 0; i < sortedPeriods.length; i++) {
+            let period = sortedPeriods[i];
+            let days = period.days;
+            
+            let deduction = Math.min(days, remainingFree);
+            let netDays = days - deduction;
+            if (netDays < 0) netDays = 0;
+            remainingFree -= deduction;
+            
+            let equipType = container.equipmentType;
+            let sizeRaw = equipType.toString().trim();
+let size = sizeRaw.match(/^(\d+)/)?.[1] || "";
 
-// ===================================================
-// شرط إظهار الحاوية في تبويب 5
-// ===================================================
-// استخدم المتغيرات الموجودة (لا تعيد تعريفها)
-// ===================================================
-// isRefrigerated موجودة من الأعلى
-// type موجود من الأعلى
-// netDays موجود من الأعلى
-
-let freightKind = period.rawData["Freight Kind"] || "";
-let orderNumber = period.rawData["Order Number"] || "";
-// إذا كانت RF و Freight Kind = MTY و Is Refrigerated = false و netDays <= 0 → لا تظهر
-let isInvalidRF = (type === "RF" && freightKind === "MTY" && isRefrigerated === "false" && netDays <= 0);
-
-let shouldShow = (type === "RF" && !isInvalidRF) || hasMultiplePeriods || (type === "GP" && netDays > 0) || (netDays === 0 && orderNumber && orderNumber.trim() !== "");
-// ===================================================
-// ===================================================
-    // =====================================
-    
-    // لف result.push داخل شرط if
-    if (shouldShow) {
-        result.push({
-            "Container No.": id,
-            "Size": size,
-			"Freight Kind": period.rawData["Freight Kind"] || "",  // ← أضف هذا
-            "Is OOG": isOOG,
-            "Is Refrigerated": isRefrigerated,
-            "O/B Loc Type": displayType,
-            "Is Bundled": isBundled,
-            "Is Hazardous": isHazardous,
-            "IMDG Class": imdgClass,
-            "Type": type,
-            "Line ID": lineId,
-            "طريقة الحساب": method,
-            "Flex String 01": period.flexString01,
-            "flex_04": period.flexString04,
-			"Order Number": orderNumber,  // ← تأكد من وجود هذا السطر
-            "TRSHP Start": period.start,
-            "TRSHP End": period.end,
-            "TRSHP Days": days,
-            "TRSHP Free": freeDays,   // السماح الكلي من الإعدادات
-            "TRSHP Net": netDays,
-            "Total Net": netDays,
-            "Vessel Name": period.vesselName,
-            "O/B Carrier Name": period.obCarrierName,
-            "O/B Carrier ATD": period.obCarrierATD,
-            "Period Order": i + 1,
-            "Period Type": displayType
-        });
-    }  // <--- قوس إغلاق if
-}  
-	}// <--- قوس إغلاق for
+if (!size) {
+    if (sizeRaw.startsWith("L5")) size = "45";
+    else if (sizeRaw.startsWith("L4")) size = "40";
+    else if (sizeRaw.startsWith("L2")) size = "20";
+}
+            let isRefrigerated = period.rawData["Is Refrigerated"] || "";
+            let type = (isRefrigerated === "true" || equipType.includes("R1")) ? "RF" : "GP";
+            let isOOG = period.rawData["Is OOG"] || "";
+            let isBundled = period.rawData["Is Bundled"] || "";
+            let isHazardous = period.rawData["Is Hazardous"] || "";
+            let imdgClass = period.rawData["IMDG Class"] || "";
+            let method = isExcl ? "🚫 سماح مستقل" : "🔄 سماح متسلسل";
+            let displayType = period.obLocType || period.ibLocType || "—";
+            
+            let hasMultiplePeriods = (sortedPeriods.length > 1);
+            
+            // ===== استخدم freightKind من period (بدون إعادة تعريف) =====
+            let periodFreightKind = period.freightKind || "";
+            let orderNumber = period.rawData["Order Number"] || "";
+            
+            // إذا كانت RF و Freight Kind = MTY و Is Refrigerated = false و netDays <= 0 → لا تظهر
+            let isInvalidRF = (type === "RF" && periodFreightKind === "MTY" && isRefrigerated === "false" && netDays <= 0);
+            
+            let shouldShow = (type === "RF" && !isInvalidRF) || hasMultiplePeriods || (type === "GP" && netDays > 0) || (netDays === 0 && orderNumber && orderNumber.trim() !== "");
+            
+            if (shouldShow) {
+                result.push({
+                    "Container No.": id,
+                    "Size": size,
+                    "Freight Kind": periodFreightKind,
+                    "Is OOG": isOOG,
+                    "Is Refrigerated": isRefrigerated,
+                    "O/B Loc Type": displayType,
+                    "Is Bundled": isBundled,
+                    "Is Hazardous": isHazardous,
+                    "IMDG Class": imdgClass,
+                    "Type": type,
+                    "Line ID": lineId,
+                    "طريقة الحساب": method,
+                    "Flex String 01": period.flexString01,
+                    "flex_04": period.flexString04,
+                    "Order Number": orderNumber,
+                    "TRSHP Start": period.start,
+                    "TRSHP End": period.end,
+                    "TRSHP Days": days,
+                    "TRSHP Free": freeDays,
+                    "TRSHP Net": netDays,
+                    "Total Net": netDays,
+                    "Vessel Name": period.vesselName,
+                    "O/B Carrier Name": period.obCarrierName,
+                    "O/B Carrier ATD": period.obCarrierATD,
+                    "Period Order": i + 1,
+                    "Period Type": displayType
+                });
+            }
+        }
+    } // <--- قوس إغلاق for (containersMap)
     
     // ترتيب النتائج: حسب رقم الحاوية ثم حسب الترتيب (TRUCK ثم VESSEL)
     result.sort((a, b) => {
@@ -5089,6 +5569,11 @@ function processAndDisplay6() {
             
             // حساب الأيام والتداخل
             let stDays = diffDays(stStart, stEnd);
+			// ===== خصم On-Hire (يوم واحد) =====
+			if (container.notes === "On-Hire") {
+				stDays = stDays - 1;
+				if (stDays < 0) stDays = 0;
+			}
             let exDays = diffDays(exStart, exEnd);
             
             // حساب الأيام المشتركة
@@ -5103,8 +5588,25 @@ function processAndDisplay6() {
             let exFlexString01 = ex["Flex String 01"] || "";
             let exDrayStatus = ex["Dray Status"] || "";
             
-            let stFree = getFreeDays(strgePeriods6, lineId, stStart, stFlexString01, stDrayStatus);
-            let exFree = getFreeDays(exprtPeriods6, lineId, exStart, exFlexString01, exDrayStatus);
+            // ===================================================
+            // استخراج isHazardous من STRGE
+            // ===================================================
+            let stHazardousFlag = (st["Is Hazardous"] === "true" || st["Is Hazardous"] === true);
+            
+            // ===================================================
+            // استخراج isHazardous من EXPRT
+            // ===================================================
+            let exHazardousFlag = (ex["Is Hazardous"] === "true" || ex["Is Hazardous"] === true);
+            
+            // ===================================================
+            // استدعاء getFreeDays مع إضافة isHazardous لـ STRGE
+            // ===================================================
+            let stFree = getFreeDays(strgePeriods6, lineId, stStart, stFlexString01, stDrayStatus, "", stHazardousFlag);
+            
+            // ===================================================
+            // استدعاء getFreeDays مع إضافة isHazardous لـ EXPRT
+            // ===================================================
+            let exFree = getFreeDays(exprtPeriods6, lineId, exStart, exFlexString01, exDrayStatus, "", exHazardousFlag);
             
             let strgeNet = 0, exprtNet = 0;
             
@@ -5123,14 +5625,21 @@ function processAndDisplay6() {
             
             // معلومات الحاوية
             let equipType = container.equipmentType;
-            let size = equipType.toString().match(/^(\d+)/)?.[1] || "";
+            let sizeRaw = equipType.toString().trim();
+let size = sizeRaw.match(/^(\d+)/)?.[1] || "";
+
+if (!size) {
+    if (sizeRaw.startsWith("L5")) size = "45";
+    else if (sizeRaw.startsWith("L4")) size = "40";
+    else if (sizeRaw.startsWith("L2")) size = "20";
+}
             let isRefrigerated = ex["Is Refrigerated"] || "";
             let type = (isRefrigerated === "true" || equipType.includes("R1")) ? "RF" : "GP";
-            let isOOG = st["Is OOG"] || "";
-            let isBundled = st["Is Bundled"] || "";
-            let isHazardous = st["Is Hazardous"] || "";
-            let imdgClass = st["IMDG Class"] || "";
-            let flexString01 = st["Flex String 01"] || "";
+            let isOOG = ex["Is OOG"] || "";
+            let isBundled = ex["Is Bundled"] || "";
+            let isHazardous = ex["Is Hazardous"] || "";
+            let imdgClass = ex["IMDG Class"] || "";
+            let flexString01 = ex["Flex String 01"] || "";
             let vesselName = st["I/B Carrier Name"] || "";
             if (!vesselName) vesselName = ex["I/B Carrier Name"] || "—";
             
@@ -5142,11 +5651,12 @@ function processAndDisplay6() {
                 "Is Bundled": isBundled,
                 "Is Hazardous": isHazardous,
                 "IMDG Class": imdgClass,
+				"Notes": (container.notes === "On-Hire") ? "On-Hire" : "",
                 "Type": type,
                 "Line ID": lineId,
                 "طريقة الحساب": method,
                 "Flex String 01": flexString01,
-				"flex_04": ex["Flex String 04"] || "",  // ← أضف هذا السطر
+                "flex_04": ex["Flex String 04"] || "",
                 "STRGE Start": stStart,
                 "STRGE End": stEnd,
                 "STRGE Days": stDays,
@@ -5192,7 +5702,14 @@ function processAndDisplay7() {
     for (let [id, container] of containersMap.entries()) {
         let lineId = container.lineId || "";
         let equipType = container.equipmentType || "";
-        let size = equipType.toString().match(/^(\d+)/)?.[1] || "";
+        let sizeRaw = equipType.toString().trim();
+let size = sizeRaw.match(/^(\d+)/)?.[1] || "";
+
+if (!size) {
+    if (sizeRaw.startsWith("L5")) size = "45";
+    else if (sizeRaw.startsWith("L4")) size = "40";
+    else if (sizeRaw.startsWith("L2")) size = "20";
+}
         
         // ===== التحقق من وجود حالات أخرى =====
         let hasImprt = container.imprt !== null;
@@ -5481,6 +5998,155 @@ function processAndDisplay7() {
     
     console.log("✅ processAndDisplay7 اكتمل");
 }
+
+// ========== دالة معالجة تبويب 8 (Storage Finalout) ==========
+function processAndDisplay8() {
+    console.log("=== بدء processAndDisplay8 (Storage Finalout) ===");
+    
+    let result = [];
+    let headerInfo = {
+        orderNumber: "",
+        lineOp: ""
+    };
+    
+    // ===== تجميع البيانات من containersMap =====
+    for (let [id, container] of containersMap.entries()) {
+        // البحث عن أي سجل يحتوي على Order Number (من أي فئة)
+        let storageData = null;
+        let orderNumber = "";
+        let lineOp = "";
+        let unitNbr = id;
+        let typeISO = "";
+        let orig = "";
+        let timeIn = "";
+        let timeOut = "";
+        let storageDaysTotal = 0;
+        let lclPoss = "";
+        let freightKind = "";
+        
+        // البحث في trshpList أولاً (قد تحتوي على Order Number)
+        if (container.trshpList && container.trshpList.length > 0) {
+            for (let tr of container.trshpList) {
+                let orderNum = tr["Order Number"] || "";
+                if (orderNum && orderNum.trim() !== "") {
+                    storageData = tr;
+                    break;
+                }
+            }
+        }
+        
+        // إذا لم نجد، نبحث في exprtList
+        if (!storageData && container.exprtList && container.exprtList.length > 0) {
+            for (let ex of container.exprtList) {
+                let orderNum = ex["Order Number"] || "";
+                if (orderNum && orderNum.trim() !== "") {
+                    storageData = ex;
+                    break;
+                }
+            }
+        }
+        
+        // إذا لم نجد، نبحث في strge
+        if (!storageData && container.strge) {
+            let orderNum = container.strge["Order Number"] || "";
+            if (orderNum && orderNum.trim() !== "") {
+                storageData = container.strge;
+            }
+        }
+        
+        // إذا لم نجد، نبحث في imprt
+        if (!storageData && container.imprt) {
+            let orderNum = container.imprt["Order Number"] || "";
+            if (orderNum && orderNum.trim() !== "") {
+                storageData = container.imprt;
+            }
+        }
+        
+        // إذا لم نجد أي سجل به Order Number، نتخطى
+        if (!storageData) continue;
+        
+        // استخراج البيانات باستخدام الأعمدة الصحيحة
+        unitNbr = storageData["Unit Nbr"] || storageData["Equip ID"] || id;
+        typeISO = storageData["Type ISO"] || storageData["Equipment Type"] || "";
+        orig = storageData["Orig"] || "";
+        orderNumber = storageData["Order Number"] || "";
+        lineOp = storageData["Line Op"] || storageData["Line ID"] || "";
+        timeIn = storageData["Time In"] || storageData["Start Time"] || "";
+        timeOut = storageData["Time Out"] || storageData["End Time"] || "";
+        storageDaysTotal = parseInt(storageData["Storage Days Total"]) || 0;
+        lclPoss = storageData["LCL-POSS"] || "";
+        freightKind = storageData["Frght Kind"] || storageData["Freight Kind"] || "";
+        
+        // حفظ معلومات الرأس (أول حاوية فقط)
+        if (!headerInfo.orderNumber) {
+            headerInfo.orderNumber = orderNumber;
+            headerInfo.lineOp = lineOp;
+        }
+        
+        // تحويل التواريخ
+        let timeInFormatted = convertDate(timeIn);
+        let timeOutFormatted = convertDate(timeOut);
+        
+        // ===== حساب أيام التخزين الجديدة =====
+        let newStorageDays = 0;
+        if (timeInFormatted && timeOutFormatted) {
+            let diff = diffDays(timeInFormatted, timeOutFormatted);
+            if (orig === "DPA") {
+                newStorageDays = diff - 1;
+                if (newStorageDays < 0) newStorageDays = 0;
+            } else {
+                newStorageDays = diff;
+            }
+        }
+        
+        // ترتيب حسب LCL-POSS
+        let sortKey = lclPoss || "zzzz";
+        
+        result.push({
+            "رقم الحاوية": unitNbr,
+            "النوع": typeISO,
+            "المنشأ": orig || "—",
+            "رقم الأمر": orderNumber,
+            "الخط المشغل": lineOp,
+            "تاريخ الدخول": timeInFormatted || "—",
+            "تاريخ الخروج": timeOutFormatted || "—",
+            "أيام التخزين (جديد)": newStorageDays,
+            "Storage Days Total": storageDaysTotal,
+            "الملاحظات": lclPoss || "—",
+            "نوع الشحنة": freightKind || "—",
+            "_sortKey": sortKey
+        });
+    }
+    
+    // ===== ترتيب النتائج حسب LCL-POSS =====
+    result.sort((a, b) => a["_sortKey"].localeCompare(b["_sortKey"]));
+    result.forEach(item => delete item._sortKey);
+    
+    currentData8 = result;
+    storageFinaloutHeader = headerInfo;
+    
+    console.log(`✅ تمت معالجة ${currentData8.length} حاوية في تبويب Storage Finalout`);
+    console.log("📋 معلومات الرأس:", headerInfo);
+    
+    // تحديث الـ Header
+    updateStorageFinaloutHeader(headerInfo);
+    
+    // عرض البيانات
+    renderTable8("bodyTab8", currentData8, "searchTab8", "typeTab8", "statsTab8");
+    
+    // إظهار عناصر التبويب
+    let filtersDiv = document.getElementById("filtersTab8");
+    let wrapperDiv = document.getElementById("wrapperTab8");
+    let statsDiv = document.getElementById("statsTab8");
+    
+    if (filtersDiv) filtersDiv.style.display = "flex";
+    if (wrapperDiv) wrapperDiv.style.display = "block";
+    if (statsDiv && currentData8.length > 0) {
+        statsDiv.innerHTML = renderAdvancedStatsTab8(currentData8);
+        statsDiv.style.display = "flex";
+    }
+}
+
 // ========== دالة عرض جدول تبويب 7 ==========
 function renderTable7(tbodyId, data, searchId, typeId, statsId) {
     console.log("=== renderTable7 ===");
@@ -5559,6 +6225,72 @@ function renderTable7(tbodyId, data, searchId, typeId, statsId) {
     console.log("✅ renderTable7 completed, displayed:", filtered.length, "rows");
 }
 
+// ========== عرض جدول تبويب 8 ==========
+function renderTable8(tbodyId, data, searchId, typeId, statsId) {
+    let search = document.getElementById(searchId)?.value.toLowerCase() || "";
+    let type = document.getElementById(typeId)?.value || "";
+    
+    let filtered = data.filter(item => {
+        let matchSearch = item["رقم الحاوية"]?.toLowerCase().includes(search) || false;
+        let matchType = !type || item["النوع"] === type;
+        return matchSearch && matchType;
+    });
+    
+    let tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    tbody.innerHTML = "";
+    
+    if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:40px;">⚠️ لا توجد حاويات</td></tr>`;
+        return;
+    }
+    
+    for (let i = 0; i < filtered.length; i++) {
+        let item = filtered[i];
+        let row = tbody.insertRow();
+        
+        // تم إزالة عمود "المسلسل" ← هنا التعديل
+        
+        // الأعمدة المتبقية بنفس الترتيب
+        let cell1 = row.insertCell();
+        cell1.textContent = item["رقم الحاوية"] || "—";
+        cell1.style.fontWeight = "bold";
+        
+        let cell2 = row.insertCell();
+        cell2.textContent = item["النوع"] || "—";
+        
+        let cell3 = row.insertCell();
+        cell3.textContent = item["المنشأ"] || "—";
+        
+        let cell4 = row.insertCell();
+        cell4.textContent = item["تاريخ الدخول"] || "—";
+        
+        let cell5 = row.insertCell();
+        cell5.textContent = item["تاريخ الخروج"] || "—";
+        
+        let cell6 = row.insertCell();
+        cell6.textContent = item["أيام التخزين (جديد)"] !== undefined ? item["أيام التخزين (جديد)"] : "—";
+        cell6.style.background = "#e3f2fd";
+        cell6.style.fontWeight = "bold";
+        
+        let cell7 = row.insertCell();
+        cell7.textContent = item["Storage Days Total"] !== undefined ? item["Storage Days Total"] : "—";
+        cell7.style.background = "#fff3cd";
+        
+        let cell8 = row.insertCell();
+        cell8.textContent = item["الملاحظات"] || "—";
+        
+        let cell9 = row.insertCell();
+        cell9.textContent = item["نوع الشحنة"] || "—";
+    }
+    
+    // تحديث الإحصائيات
+    let statsDiv = document.getElementById(statsId);
+    if (statsDiv && data.length > 0) {
+        statsDiv.innerHTML = renderAdvancedStatsTab8(data);
+        statsDiv.style.display = "flex";
+    }
+}
 // ========== دالة إحصائيات تبويب 7 ==========
 function renderAdvancedStatsTab7(data) {
     if (!data || data.length === 0) {
@@ -5668,6 +6400,49 @@ function renderAdvancedStatsTab7(data) {
     `;
 }
 
+// ========== إحصائيات تبويب 8 ==========
+function renderAdvancedStatsTab8(data) {
+    if (!data || data.length === 0) {
+        return `<div style="padding:20px; text-align:center;">لا توجد بيانات</div>`;
+    }
+    
+    let totalContainers = data.length;
+    let totalNewDays = data.reduce((s, i) => s + (i["أيام التخزين (جديد)"] || 0), 0);
+    let totalOldDays = data.reduce((s, i) => s + (i["Storage Days Total"] || 0), 0);
+    let avgNewDays = (totalNewDays / totalContainers).toFixed(1);
+    
+    let dpaContainers = data.filter(i => i["المنشأ"] === "DPA");
+    let dpaCount = dpaContainers.length;
+    let dpaDays = dpaContainers.reduce((s, i) => s + (i["أيام التخزين (جديد)"] || 0), 0);
+    
+    let emptyContainers = data.filter(i => i["نوع الشحنة"] === "Empty");
+    let emptyCount = emptyContainers.length;
+    
+    return `
+        <div style="display: flex; gap: 15px; margin: 0 25px 20px 25px; flex-wrap: wrap;">
+            <div style="flex: 1; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 12px; padding: 15px; text-align: center; color: white;">
+                <div style="font-size: 14px;">📦 إجمالي الحاويات</div>
+                <div style="font-size: 28px; font-weight: bold;">${totalContainers}</div>
+                <div style="font-size: 12px;">حاوية</div>
+            </div>
+            <div style="flex: 1; background: linear-gradient(135deg, #4facfe, #00f2fe); border-radius: 12px; padding: 15px; text-align: center; color: white;">
+                <div style="font-size: 14px;">📅 إجمالي أيام التخزين (جديد)</div>
+                <div style="font-size: 28px; font-weight: bold;">${totalNewDays}</div>
+                <div style="font-size: 12px;">متوسط ${avgNewDays} يوم</div>
+            </div>
+            <div style="flex: 1; background: linear-gradient(135deg, #f093fb, #f5576c); border-radius: 12px; padding: 15px; text-align: center; color: white;">
+                <div style="font-size: 14px;">📅 Storage Days Total</div>
+                <div style="font-size: 28px; font-weight: bold;">${totalOldDays}</div>
+                <div style="font-size: 12px;">من البيانات الأصلية</div>
+            </div>
+            <div style="flex: 1; background: linear-gradient(135deg, #43e97b, #38f9d7); border-radius: 12px; padding: 15px; text-align: center; color: white;">
+                <div style="font-size: 14px;">📍 DPA</div>
+                <div style="font-size: 28px; font-weight: bold;">${dpaCount}</div>
+                <div style="font-size: 12px;">حاوية (${dpaDays} يوم)</div>
+            </div>
+        </div>
+    `;
+}
 // ========== دوال إدارة فترات السماح للتبويب 7 ==========
 function getPeriodsArray7() {
     return imprtForwardPeriods7;
@@ -6033,8 +6808,14 @@ function renderAdvancedStatsTab6(data) {
     let refrigerated40Count = refrigerated40.length;
     let refrigerated20StrgeNet = refrigerated20.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
     let refrigerated40StrgeNet = refrigerated40.reduce((s, i) => s + (i["STRGE Net"] || 0), 0);
-    let size20Containers = data.filter(i => i["Size"]?.toString().startsWith("2"));
-    let size40Containers = data.filter(i => i["Size"]?.toString().startsWith("4"));
+	let size20Containers = data.filter(i => {
+		let s = (i["Size"] || "").toString().trim();
+		return s.startsWith("2");
+	});
+	let size40Containers = data.filter(i => {
+		let s = (i["Size"] || "").toString().trim();
+		return s.startsWith("4") || s.startsWith("95");
+	});
     
     let size20Count = size20Containers.length;
     let size40Count = size40Containers.length;
@@ -6514,6 +7295,45 @@ else if (tabId === '4') {
     updateHeaderUI(carrierName, maxDate, lineIds);
 }
 
+// ========== أزرار تبويب 8 ==========
+
+// زر طباعة تبويب 8
+document.getElementById("printBtn8").addEventListener("click", function() {
+    if (currentData8 && currentData8.length > 0) {
+        printReport('tab8', '📋 تقرير Storage Finalout');
+    } else {
+        alert("⚠️ لا توجد بيانات للطباعة في تبويب Storage Finalout");
+    }
+});
+
+// زر تصدير تبويب 8 إلى Excel
+document.getElementById("exportBtn8").addEventListener("click", function() {
+    if (currentData8 && currentData8.length > 0) {
+        let ws = XLSX.utils.json_to_sheet(currentData8);
+        let wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "STORAGE_FINALOUT");
+        XLSX.writeFile(wb, `تقرير_Storage_Finalout_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.xlsx`);
+    } else {
+        alert("⚠️ لا توجد بيانات للتصدير في تبويب Storage Finalout");
+    }
+});
+
+// زر اختيار الأعمدة لتبويب 8
+document.getElementById("selectColumnsBtn8").addEventListener("click", function() {
+    // يمكنك استخدام دالة عامة لاختيار الأعمدة
+    // إذا كانت الأعمدة معرفة مسبقاً في availableColumnsTab8
+    openColumnModal('tab8'); // أو أنشئ دالة خاصة
+});
+
+// ========== البحث والفلترة لتبويب 8 ==========
+document.getElementById("searchTab8")?.addEventListener("input", function() {
+    renderTable8("bodyTab8", currentData8, "searchTab8", "typeTab8", "statsTab8");
+});
+
+document.getElementById("typeTab8")?.addEventListener("change", function() {
+    renderTable8("bodyTab8", currentData8, "searchTab8", "typeTab8", "statsTab8");
+});
+
 function updateHeaderUI(carrierName, maxDate, lineIds) {
     // تحديث اسم السفينة في عنوان الصفحة و h1
     if (carrierName !== "—" && carrierName !== currentVesselName) {
@@ -6557,6 +7377,1533 @@ document.addEventListener("DOMContentLoaded", function() {
         loadSettingsAutomatically();
     }, 500);
 });
+
+// ============================================================
+// تقرير شامل - حسب حالات الحاويات والحالة (EXPRT/TRSHP/STRGE)
+// ============================================================
+
+function generateAdvancedReport() {
+    console.log("🔍 بدء إنشاء التقرير التفصيلي...");
+
+    // ===== تجميع البيانات من جميع التبويبات =====
+    let tabs = [
+        { id: 'tab1', data: currentData1 || [], label: 'TRSHP + EXPRT' },
+        { id: 'tab2', data: currentData2 || [], label: 'STRGE + EXPRT + IMPRT' },
+        { id: 'tab3', data: currentData3 || [], label: 'EXPRT فقط' },
+        { id: 'tab4', data: currentData4 || [], label: 'STRGE فارغ (MTY) + IMPRT' },
+        { id: 'tab5', data: currentData5 || [], label: 'TRSHP فقط' },
+        { id: 'tab6', data: currentData6 || [], label: 'STRGE + EXPRT فقط' },
+        { id: 'tab7', data: currentData7 || [], label: 'IMPRT + FORWARD' },
+        { id: 'tab8', data: currentData8 || [], label: 'Storage Finalout' }
+    ];
+
+    // ===== استخراج معلومات السفينة =====
+    let vesselInfo = {
+        carrierName: "—",
+        shippingDate: "—",
+        lineId: "—"
+    };
+
+    for (let [id, container] of containersMap.entries()) {
+        let sourceData = null;
+        let found = false;
+
+        for (let tab of tabs) {
+            if (tab.id === 'tab1' || tab.id === 'tab2' || tab.id === 'tab3' || tab.id === 'tab6' || tab.id === 'tab7') {
+                if (container.exprtList && container.exprtList.length > 0) {
+                    sourceData = container.exprtList[0];
+                    found = true;
+                    break;
+                } else if (container.exprt) {
+                    sourceData = container.exprt;
+                    found = true;
+                    break;
+                }
+            } else if (tab.id === 'tab4') {
+                if (container.strge) {
+                    sourceData = container.strge;
+                    found = true;
+                    break;
+                }
+            } else if (tab.id === 'tab5') {
+                if (container.trshpList && container.trshpList.length > 0) {
+                    sourceData = container.trshpList[0];
+                    found = true;
+                    break;
+                } else if (container.trshp) {
+                    sourceData = container.trshp;
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        if (found && sourceData) {
+            let carrierName = sourceData["O/B Carrier Name"] || sourceData["I/B Carrier Name"] || "";
+            if (carrierName && carrierName !== "" && vesselInfo.carrierName === "—") {
+                vesselInfo.carrierName = carrierName;
+            }
+            let shippingDate = sourceData["O/B Carrier ATD"] || sourceData["O/B Carrier ATA"] || sourceData["I/B Carrier ATD"] || "";
+            if (shippingDate && shippingDate !== "" && vesselInfo.shippingDate === "—") {
+                vesselInfo.shippingDate = shippingDate;
+            }
+            let lineId = sourceData["Line ID"] || "";
+            if (lineId && lineId !== "" && vesselInfo.lineId === "—") {
+                vesselInfo.lineId = lineId;
+            }
+            if (vesselInfo.carrierName !== "—" && vesselInfo.shippingDate !== "—" && vesselInfo.lineId !== "—") {
+                break;
+            }
+        }
+    }
+
+    // ===== تعريف أنواع الحاويات مع المقاس =====
+    let sizeTypes = [
+        { size: '20', label: '20\'', check: (item) => {
+            let size = item["Size"] || "";
+            return size.toString().startsWith("2") || size.toString().startsWith("20");
+        }},
+        { size: '40', label: '40\'', check: (item) => {
+            let size = item["Size"] || "";
+            return size.toString().startsWith("4") || size.toString().startsWith("40") || size.toString().startsWith("45");
+        }}
+    ];
+
+    let containerTypes = [
+        { key: 'GP', label: 'GP', check: (item) => {
+            let type = item["Type"] || "";
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            return type === "GP" && !isOOG && !isHazard && !isRef;
+        }},
+        { key: 'RF', label: 'RF', check: (item) => {
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            return isRef && !isOOG && !isHazard;
+        }},
+        { key: 'OOG', label: 'OOG', check: (item) => {
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            return isOOG && !isRef && !isHazard;
+        }},
+        { key: 'Hazard', label: 'Hazard', check: (item) => {
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            return isHazard && !isOOG && !isRef;
+        }},
+        { key: 'RF_OOG', label: 'RF+OOG', check: (item) => {
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            return isRef && isOOG && !isHazard;
+        }},
+        { key: 'RF_Hazard', label: 'RF+Hazard', check: (item) => {
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            return isRef && isHazard && !isOOG;
+        }},
+        { key: 'OOG_Hazard', label: 'OOG+Hazard', check: (item) => {
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            return isOOG && isHazard && !isRef;
+        }},
+        { key: 'RF_OOG_Hazard', label: 'RF+OOG+Hazard', check: (item) => {
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            return isRef && isOOG && isHazard;
+        }}
+    ];
+
+    let columns = [];
+    for (let type of containerTypes) {
+        for (let size of sizeTypes) {
+            let colKey = size.size + '_' + type.key;
+            columns.push({
+                key: colKey,
+                label: size.label + ' ' + type.label,
+                check: (item) => {
+                    return type.check(item) && size.check(item);
+                }
+            });
+        }
+    }
+
+    // ===== دالة لتحديد الحالات المنطبقة على الحاوية =====
+    function getCategoriesForItem(item, source) {
+        let cats = [];
+
+        function hasCategory(prefix) {
+            let net = parseFloat(item[prefix + " Net"]) || 0;
+            let days = parseFloat(item[prefix + " Days"]) || 0;
+            let start = item[prefix + " Start"] || "";
+            let end = item[prefix + " End"] || "";
+            return (net > 0 || days > 0 || start !== "" || end !== "");
+        }
+
+        function getNet(prefix) {
+            return parseFloat(item[prefix + " Net"]) || 0;
+        }
+
+        function getDays(prefix) {
+            return parseFloat(item[prefix + " Days"]) || 0;
+        }
+
+        function isRefrigerated(item) {
+            let ref = item["Is Refrigerated"];
+            if (typeof ref === "boolean") return ref;
+            if (typeof ref === "string") return ref.trim().toLowerCase() === "true";
+            if (typeof ref === "number") return ref === 1;
+            return false;
+        }
+
+        let flexString01 = item["Flex String 01"] || "";
+        let drayStatus = item["Dray Status"] || "";
+
+        function addCategory(cat, days, refDays, isRef) {
+            cats.push({
+                cat: cat,
+                days: days,
+                refDays: refDays || 0,
+                isRef: isRef || false,
+                flexString01: flexString01,
+                drayStatus: drayStatus
+            });
+        }
+
+        let isSpecial = (flexString01 === "TRUE" || drayStatus === "FORWARD" || drayStatus === "RETURN");
+
+        if (source === 'tab1' || source === 'tab2' || source === 'tab3' || source === 'tab6') {
+            if (hasCategory("EXPRT")) {
+                let days = getNet("EXPRT");
+                let refDays = getDays("EXPRT");
+                let isRef = isRefrigerated(item);
+                addCategory('EXPRT', days, refDays, isRef);
+                if (isSpecial) {
+                    addCategory('EXPRT_SPECIAL', days, refDays, isRef);
+                }
+            }
+            if (source === 'tab1' && hasCategory("TRSHP")) {
+                addCategory('TRSHP', getNet("TRSHP"), 0, false);
+            }
+            if (source === 'tab2' && hasCategory("STRGE")) {
+                addCategory('STRGE', getNet("STRGE"), 0, false);
+            }
+            if (source === 'tab6' && hasCategory("STRGE")) {
+                addCategory('STRGE', getNet("STRGE"), 0, false);
+            }
+        } else if (source === 'tab4') {
+            if (hasCategory("STRGE")) {
+                addCategory('STRGE', getNet("STRGE"), getDays("STRGE"), isRefrigerated(item));
+            }
+        } else if (source === 'tab5') {
+            if (hasCategory("TRSHP")) {
+                addCategory('TRSHP', getNet("TRSHP"), getDays("TRSHP"), isRefrigerated(item));
+            }
+        } else if (source === 'tab7') {
+            let net = parseFloat(item["Net"]) || 0;
+            if (net > 0) {
+                addCategory('IMPRT', net, 0, false);
+            }
+        } else if (source === 'tab8') {
+            let days = parseFloat(item["أيام التخزين (جديد)"]) || 0;
+            if (days > 0) {
+                addCategory('STRGE', days, 0, false);
+            }
+        }
+
+        return cats;
+    }
+
+    // ===== بناء بيانات التقرير =====
+    let reportData = [];
+
+    for (let tab of tabs) {
+        let tabEntry = {
+            label: tab.label,
+            source: tab.id,
+            categories: {},
+            containerSets: {}
+        };
+
+        let containerSets = {};
+
+        for (let item of tab.data) {
+            let cats = getCategoriesForItem(item, tab.id);
+
+            let matchedCol = null;
+            for (let col of columns) {
+                try {
+                    if (col.check(item)) {
+                        matchedCol = col;
+                        break;
+                    }
+                } catch(e) {}
+            }
+            if (!matchedCol) {
+                matchedCol = columns.find(c => c.key === '20_GP') || columns[0];
+            }
+
+            let containerNo = item["Container No."] || "";
+
+            for (let catObj of cats) {
+                let cat = catObj.cat;
+                let days = catObj.days;
+                let refDays = catObj.refDays || 0;
+                let isRef = catObj.isRef || false;
+                let flexString01 = catObj.flexString01 || "";
+                let drayStatus = catObj.drayStatus || "";
+
+                if (!tabEntry.categories[cat]) {
+                    tabEntry.categories[cat] = {};
+                    for (let col of columns) {
+                        tabEntry.categories[cat][col.key] = {
+                            total: 0,
+                            refrigerated: 0,
+                            flexSet: new Set(),
+                            draySet: new Set()
+                        };
+                    }
+                }
+
+                let cellData = tabEntry.categories[cat][matchedCol.key];
+                cellData.total += days;
+                if (isRef && refDays > 0) {
+                    cellData.refrigerated += refDays;
+                }
+
+                // ===== العلامات تضاف فقط للفئة EXPRT_SPECIAL =====
+                if (cat === 'EXPRT_SPECIAL') {
+                    if (flexString01 === "TRUE" || flexString01 === true) {
+                        cellData.flexSet.add("TRUE");
+                    }
+                    if (drayStatus === "FORWARD") {
+                        cellData.draySet.add("FORWARD");
+                    } else if (drayStatus === "RETURN") {
+                        cellData.draySet.add("RETURN");
+                    } else if (drayStatus === "EMPTY") {
+                        cellData.draySet.add("EMPTY");
+                    }
+                }
+
+                if (!containerSets[cat]) {
+                    containerSets[cat] = {};
+                    for (let col of columns) {
+                        containerSets[cat][col.key] = new Set();
+                    }
+                }
+                if (containerNo) {
+                    containerSets[cat][matchedCol.key].add(containerNo);
+                }
+            }
+        }
+
+        // خصم EXPRT_SPECIAL من EXPRT
+        if (tabEntry.categories['EXPRT'] && tabEntry.categories['EXPRT_SPECIAL']) {
+            for (let col of columns) {
+                let totalData = tabEntry.categories['EXPRT'][col.key];
+                let specialData = tabEntry.categories['EXPRT_SPECIAL'][col.key];
+                totalData.total = Math.max(0, totalData.total - specialData.total);
+                totalData.refrigerated = Math.max(0, totalData.refrigerated - specialData.refrigerated);
+                // إزالة أي علامات قد تكون أُضيفت بالخطأ
+                totalData.flexSet = new Set();
+                totalData.draySet = new Set();
+            }
+        }
+
+        // إزالة العلامات من جميع الفئات الأخرى (ضمان عدم ظهورها)
+        for (let cat in tabEntry.categories) {
+            if (cat !== 'EXPRT_SPECIAL') {
+                for (let col of columns) {
+                    let data = tabEntry.categories[cat][col.key];
+                    data.flexSet = new Set();
+                    data.draySet = new Set();
+                }
+            }
+        }
+
+        tabEntry.containerSets = {};
+        for (let cat in containerSets) {
+            tabEntry.containerSets[cat] = {};
+            for (let col of columns) {
+                tabEntry.containerSets[cat][col.key] = containerSets[cat][col.key] ? containerSets[cat][col.key].size : 0;
+            }
+        }
+
+        reportData.push(tabEntry);
+    }
+
+    // ===== إنشاء نافذة التقرير =====
+    let reportWindow = window.open('', '_blank', 'width=1600,height=900,scrollbars=yes');
+    if (!reportWindow) {
+        alert("الرجاء السماح للنوافذ المنبثقة لعرض التقرير");
+        return;
+    }
+
+    let currentDate = new Date().toLocaleString('ar-EG', {
+        year: 'numeric', month: 'numeric', day: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+    });
+
+    let shippingDateDisplay = vesselInfo.shippingDate;
+    if (shippingDateDisplay && shippingDateDisplay !== "—") {
+        let converted = convertDate(shippingDateDisplay);
+        if (converted) shippingDateDisplay = converted;
+    }
+
+    function renderDaysCell(cellData) {
+        let total = cellData?.total || 0;
+        let ref = cellData?.refrigerated || 0;
+        let flexSet = cellData?.flexSet || new Set();
+        let draySet = cellData?.draySet || new Set();
+
+        if (total === 0 && ref === 0 && flexSet.size === 0 && draySet.size === 0) {
+            return `<td class="empty-cell">—</td>`;
+        }
+
+        let markers = [];
+        if (flexSet.has("TRUE")) markers.push('⭐');
+        if (draySet.has("FORWARD")) markers.push('➡️');
+        if (draySet.has("RETURN")) markers.push('🔄');
+        if (draySet.has("EMPTY")) markers.push('⬜');
+
+        let powerText = ref > 0 ? ` (power: ${ref} day)` : '';
+        let markerText = markers.length > 0 ? ` ${markers.join(' ')}` : '';
+
+        return `<td class="num-days">${total} day${powerText}${markerText}</td>`;
+    }
+
+    function renderCountCell(count) {
+        let c = count || 0;
+        if (c === 0) {
+            return `<td class="empty-cell" style="font-size:10px;color:#999;">0 cont</td>`;
+        }
+        return `<td class="num-containers" style="font-size:10px;color:#0a3d62;">${c} cont</td>`;
+    }
+
+    let html = `
+        <!DOCTYPE html>
+        <html dir="rtl">
+        <head>
+            <meta charset="UTF-8">
+            <title>تقرير تفصيلي - حالات الحاويات</title>
+            <style>
+                * { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; box-sizing: border-box; }
+                body { background: #f0f2f5; padding: 20px; direction: rtl; }
+                .report-container {
+                    max-width: 100%;
+                    margin: auto;
+                    background: white;
+                    border-radius: 16px;
+                    box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+                    padding: 25px;
+                    overflow-x: auto;
+                }
+                .report-header {
+                    text-align: center;
+                    padding-bottom: 15px;
+                    border-bottom: 2px solid #0a3d62;
+                    margin-bottom: 20px;
+                }
+                .report-header h1 {
+                    color: #0a3d62;
+                    font-size: 24px;
+                    margin: 0;
+                }
+                .report-header .subtitle {
+                    color: #6c757d;
+                    font-size: 14px;
+                    margin-top: 5px;
+                }
+                .report-header .vessel-info {
+                    display: flex;
+                    justify-content: center;
+                    gap: 30px;
+                    margin-top: 10px;
+                    font-size: 14px;
+                    color: #0a3d62;
+                    background: #f0f8ff;
+                    padding: 8px 20px;
+                    border-radius: 8px;
+                    border: 1px solid #cce5ff;
+                }
+                .report-header .vessel-info span {
+                    font-weight: bold;
+                }
+                .report-date {
+                    text-align: left;
+                    font-size: 12px;
+                    color: #6c757d;
+                    margin-bottom: 15px;
+                }
+
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 10px;
+                    border: 2px solid #0a3d62;
+                }
+                th, td {
+                    border: 1px solid #dee2e6;
+                    padding: 4px 3px;
+                    text-align: center;
+                    vertical-align: middle;
+                }
+
+                .col-header { background: #0a3d62; color: white; font-weight: bold; font-size: 10px; }
+                .col-sub-header { background: #1a5a7a; color: white; font-size: 9px; }
+                .col-sub-header-small { background: #2a7a9a; color: white; font-size: 8px; }
+
+                .tab-row { background: #e9ecef; font-weight: bold; text-align: center; }
+                .tab-row td { text-align: center !important; }
+
+                .category-row { background: #d1ecf1; }
+                .category-row td:first-child { background: #b8d4de; padding-right: 10px; font-weight: bold; }
+
+                .special-row { background: #fce4ec; }
+                .special-row td:first-child { background: #f8bbd0; padding-right: 20px; font-weight: bold; color: #880e4f; }
+
+                .count-row { background: #fff3cd; }
+                .count-row td:first-child { background: #f8e8a0; padding-right: 10px; font-weight: bold; }
+
+                .num-days { color: #1e6f5c; font-weight: bold; }
+                .num-containers { color: #0a3d62; font-weight: bold; }
+                .empty-cell { color: #adb5bd; font-style: italic; }
+
+                .footer {
+                    margin-top: 20px;
+                    text-align: center;
+                    font-size: 12px;
+                    color: #6c757d;
+                    padding-top: 15px;
+                    border-top: 1px solid #dee2e6;
+                }
+
+                .print-btn {
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    padding: 10px 24px;
+                    background: #0a3d62;
+                    color: white;
+                    border: none;
+                    border-radius: 30px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    z-index: 1000;
+                }
+                .print-btn:hover { background: #1a5a7a; }
+                .close-btn {
+                    position: fixed;
+                    top: 20px;
+                    right: 160px;
+                    padding: 10px 24px;
+                    background: #dc3545;
+                    color: white;
+                    border: none;
+                    border-radius: 30px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    z-index: 1000;
+                }
+                .close-btn:hover { background: #c82333; }
+
+                @media print {
+                    body { background: white; padding: 10px; }
+                    .report-container { box-shadow: none; border-radius: 0; padding: 10px; }
+                    .print-btn, .close-btn { display: none; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="report-container">
+                <div class="report-header">
+                    <h1>📊 تقرير أيام التخزين حسب نوع ومقاس الحاوية</h1>
+                    <div class="vessel-info">
+                        <div>🚢 <span>السفينة:</span> ${vesselInfo.carrierName}</div>
+                        <div>📅 <span>تاريخ الرحلة:</span> ${shippingDateDisplay}</div>
+                        <div>🏷️ <span>الخط:</span> ${vesselInfo.lineId}</div>
+						<div class="report-date">📅 تاريخ التقرير: ${currentDate}</div>
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th rowspan="3" style="background:#0a3d62; color:white; width:160px; min-width:130px; vertical-align:middle;">
+                                التبويب / الحالة
+                            </th>
+                            <th colspan="${columns.length}" style="background:#0a3d62; color:white; font-size:12px;">
+                                أنواع ومقاسات الحاويات
+                            </th>
+                        </tr>
+                        <tr>
+                            ${columns.map(col => `
+                                <th colspan="1" class="col-sub-header">${col.label}</th>
+                            `).join('')}
+                        </tr>
+                        <tr>
+                            ${columns.map(col => `
+                                <th class="col-sub-header-small">أيام</th>
+                            `).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+    for (let tabIdx = 0; tabIdx < reportData.length; tabIdx++) {
+        let tab = reportData[tabIdx];
+        let tabLabel = tabs[tabIdx].label;
+        let isTab4 = tab.source === 'tab4';
+        let isTab5 = tab.source === 'tab5';
+        let isTab7 = tab.source === 'tab7';
+        let totalCols = columns.length + 1;
+
+        html += `
+            <tr class="tab-row">
+                <td colspan="${totalCols}" style="font-weight:bold; color:#0a3d62; font-size:13px; text-align:center; background:#dee2e6;">
+                    ${tabLabel}
+                </td>
+            </tr>`;
+
+        let categories = Object.keys(tab.categories).sort((a, b) => {
+            if (a === 'EXPRT') return -1;
+            if (b === 'EXPRT') return 1;
+            if (a === 'EXPRT_SPECIAL') return -1;
+            if (b === 'EXPRT_SPECIAL') return 1;
+            return a.localeCompare(b);
+        });
+
+        if (categories.length === 0) {
+            html += `
+                <tr><td colspan="${totalCols}" style="text-align:center; color:#6c757d; padding:10px;">
+                    لا توجد بيانات في هذا التبويب
+                </td></tr>`;
+            if (isTab4) {
+                html += `
+                    <tr class="count-row">
+                        <td style="padding-right:10px; font-weight:bold;">إجمالي عدد حاويات STRGE</td>
+                        ${columns.map(col => `<td style="text-align:center; font-weight:bold; background:#f8e8a0;">0 cont</td>`).join('')}
+                    </tr>`;
+            } else if (isTab5) {
+                html += `
+                    <tr class="count-row">
+                        <td style="padding-right:10px; font-weight:bold;">إجمالي عدد حاويات TRSHP</td>
+                        ${columns.map(col => `<td style="text-align:center; font-weight:bold; background:#f8e8a0;">0 cont</td>`).join('')}
+                    </tr>`;
+            } else if (isTab7) {
+                html += `
+                    <tr class="count-row">
+                        <td style="padding-right:10px; font-weight:bold;">إجمالي عدد حاويات IMPRT</td>
+                        ${columns.map(col => `<td style="text-align:center; font-weight:bold; background:#f8e8a0;">0 cont</td>`).join('')}
+                    </tr>`;
+            } else {
+                let tabsWithTotal = ['tab1', 'tab2', 'tab3', 'tab6'];
+                if (tabsWithTotal.includes(tab.source)) {
+                    html += `
+                        <tr class="count-row">
+                            <td style="padding-right:10px; font-weight:bold;">إجمالي عدد حاويات EXPRT</td>
+                            ${columns.map(col => `<td style="text-align:center; font-weight:bold; background:#f8e8a0;">0 cont</td>`).join('')}
+                        </tr>`;
+                }
+            }
+            continue;
+        }
+
+        for (let cat of categories) {
+            let catData = tab.categories[cat];
+            let catLabel = cat;
+            let rowClass = (cat === 'EXPRT_SPECIAL') ? 'special-row' : 'category-row';
+            let displayLabel = (cat === 'EXPRT_SPECIAL') ? 'EXPRT (خاص) ⭐➡️🔄' : catLabel;
+
+            html += `<tr class="${rowClass}"><td style="padding-right:10px; font-weight:bold;">${displayLabel}</td>`;
+            for (let col of columns) {
+                html += renderDaysCell(catData[col.key]);
+            }
+            html += `</tr>`;
+        }
+
+        // صفوف الإجمالي
+        if (isTab4) {
+            html += `
+                <tr class="count-row">
+                    <td style="padding-right:10px; font-weight:bold;">إجمالي عدد حاويات STRGE</td>`;
+            for (let col of columns) {
+                let count = tab.containerSets?.['STRGE']?.[col.key] || 0;
+                html += renderCountCell(count);
+            }
+            html += `</tr>`;
+        } else if (isTab5) {
+            html += `
+                <tr class="count-row">
+                    <td style="padding-right:10px; font-weight:bold;">إجمالي عدد حاويات TRSHP</td>`;
+            for (let col of columns) {
+                let count = tab.containerSets?.['TRSHP']?.[col.key] || 0;
+                html += renderCountCell(count);
+            }
+            html += `</tr>`;
+        } else if (isTab7) {
+            html += `
+                <tr class="count-row">
+                    <td style="padding-right:10px; font-weight:bold;">إجمالي عدد حاويات IMPRT</td>`;
+            for (let col of columns) {
+                let count = tab.containerSets?.['IMPRT']?.[col.key] || 0;
+                html += renderCountCell(count);
+            }
+            html += `</tr>`;
+        } else {
+            let tabsWithTotal = ['tab1', 'tab2', 'tab3', 'tab6'];
+            if (tabsWithTotal.includes(tab.source)) {
+                html += `
+                    <tr class="count-row">
+                        <td style="padding-right:10px; font-weight:bold;">إجمالي عدد حاويات EXPRT</td>`;
+                for (let col of columns) {
+                    let count = tab.containerSets?.['EXPRT']?.[col.key] || 0;
+                    html += renderCountCell(count);
+                }
+                html += `</tr>`;
+            }
+        }
+    }
+
+    html += `
+                    </tbody>
+                </table>
+
+                <div class="footer">
+                    تم إنشاؤه بواسطة نظام التخزين - تقرير تلقائي
+                </div>
+            </div>
+
+            <script>
+                let printBtn = document.createElement('button');
+                printBtn.className = 'print-btn';
+                printBtn.textContent = '🖨️ طباعة التقرير';
+                printBtn.onclick = function() { window.print(); };
+                document.body.appendChild(printBtn);
+
+                let closeBtn = document.createElement('button');
+                closeBtn.className = 'close-btn';
+                closeBtn.textContent = '✖ إغلاق';
+                closeBtn.onclick = function() { window.close(); };
+                document.body.appendChild(closeBtn);
+            <\/script>
+        </body>
+        </html>
+    `;
+
+    reportWindow.document.write(html);
+    reportWindow.document.close();
+
+    console.log("✅ تم إنشاء التقرير بنجاح");
+}
+
+// ===== إضافة زر التقرير =====
+// ===== إضافة أزرار التقارير =====
+document.addEventListener("DOMContentLoaded", function() {
+    let toolbar = document.querySelector('.upload-area');
+    if (toolbar) {
+        // زر التقرير التفصيلي (الموجود)
+        if (!document.getElementById('advancedReportBtn')) {
+            let reportBtn = document.createElement('button');
+            reportBtn.id = 'advancedReportBtn';
+            reportBtn.innerHTML = '📊 تقرير تفصيلي';
+            reportBtn.style.cssText = 'background: #8b5cf6; color: white; padding: 10px 24px; border-radius: 40px; border: none; font-weight: bold; font-size: 14px; cursor: pointer; transition: 0.3s; margin: 5px;';
+            reportBtn.onmouseover = function() { this.style.transform = 'translateY(-2px)'; };
+            reportBtn.onmouseout = function() { this.style.transform = 'translateY(0)'; };
+            reportBtn.onclick = generateAdvancedReport;
+            toolbar.appendChild(reportBtn);
+        }
+
+        // زر التقرير المجمع (الجديد)
+        if (!document.getElementById('consolidatedReportBtn')) {
+            let consBtn = document.createElement('button');
+            consBtn.id = 'consolidatedReportBtn';
+            consBtn.innerHTML = '📊 تقرير مجمع';
+            consBtn.style.cssText = 'background: #6c5ce7; color: white; padding: 10px 24px; border-radius: 40px; border: none; font-weight: bold; font-size: 14px; cursor: pointer; transition: 0.3s; margin: 5px;';
+            consBtn.onmouseover = function() { this.style.transform = 'translateY(-2px)'; };
+            consBtn.onmouseout = function() { this.style.transform = 'translateY(0)'; };
+            consBtn.onclick = generateConsolidatedReport;
+            toolbar.appendChild(consBtn);
+        }
+    }
+});
+
+
+// ============================================================
+// تقرير مجمع - تجميع EXPRT من 1,2,6 و STRGE من 2,6 و خاص من 1,2,3,6
+// ============================================================
+
+function generateConsolidatedReport() {
+    console.log("🔍 بدء إنشاء التقرير المجمع (النسخة النهائية)...");
+
+    // ===== 1. تجهيز البيانات من التبويبات المطلوبة =====
+    const dataSources = {
+        tab1: currentData1 || [],
+        tab2: currentData2 || [],
+        tab3: currentData3 || [],
+        tab4: currentData4 || [],
+        tab5: currentData5 || [],
+        tab6: currentData6 || [],
+        tab7: currentData7 || [],
+        tab8: currentData8 || []
+    };
+
+    const totalRows = Object.values(dataSources).reduce((sum, arr) => sum + arr.length, 0);
+    if (totalRows === 0) {
+        alert("⚠️ لا توجد بيانات لعرض التقرير. يرجى تحميل ملف Excel أولاً.");
+        return;
+    }
+
+    // ===== 2. تعريف أنواع ومقاسات الحاويات (نفس التقرير التفصيلي) =====
+    const sizeTypes = [
+        { size: '20', label: '20\'', check: (item) => {
+            let s = (item["Size"] || "").toString();
+            // 20 قدم: يبدأ بـ 2 (مثل 20, 22, 2200, 22G1)
+            return s.startsWith("2") || s === "20";
+        }},
+        { size: '40', label: '40\'', check: (item) => {
+            let s = (item["Size"] || "").toString();
+            // 40 قدم: يبدأ بـ 4 (40, 42, 45) أو 95 (9500 = 45 قدم)
+            return s.startsWith("4") || s.startsWith("95") || s.startsWith("42") || s.startsWith("45");
+        }}
+    ];
+
+    const containerTypes = [
+        { key: 'GP', label: 'GP', check: (item) => {
+            let type = item["Type"] || "";
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            return type === "GP" && !isOOG && !isHazard && !isRef;
+        }},
+        { key: 'RF', label: 'RF', check: (item) => {
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            return isRef && !isOOG && !isHazard;
+        }},
+        { key: 'OOG', label: 'OOG', check: (item) => {
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            return isOOG && !isRef && !isHazard;
+        }},
+        { key: 'Hazard', label: 'Hazard', check: (item) => {
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            return isHazard && !isOOG && !isRef;
+        }},
+        { key: 'RF_OOG', label: 'RF+OOG', check: (item) => {
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            return isRef && isOOG && !isHazard;
+        }},
+        { key: 'RF_Hazard', label: 'RF+Hazard', check: (item) => {
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            return isRef && isHazard && !isOOG;
+        }},
+        { key: 'OOG_Hazard', label: 'OOG+Hazard', check: (item) => {
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            return isOOG && isHazard && !isRef;
+        }},
+        { key: 'RF_OOG_Hazard', label: 'RF+OOG+Hazard', check: (item) => {
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            return isRef && isOOG && isHazard;
+        }}
+    ];
+
+    let columns = [];
+    for (let type of containerTypes) {
+        for (let size of sizeTypes) {
+            let colKey = size.size + '_' + type.key;
+            columns.push({
+                key: colKey,
+                label: size.label + ' ' + type.label,
+                check: (item) => type.check(item) && size.check(item)
+            });
+        }
+    }
+
+    // ===== 3. دالة مساعدة لتجميع البيانات (لـ EXPRT, TRSHP, STRGE) =====
+    function aggregateItems(dataArray, categoryKey, filterFn = null) {
+        let totals = {};
+        let containerSet = new Set();
+        columns.forEach(col => { totals[col.key] = 0; });
+
+        for (let item of dataArray) {
+            if (filterFn && !filterFn(item)) continue;
+
+            let containerNo = item["Container No."] || "";
+            if (!containerNo) continue;
+
+            let net = parseFloat(item[categoryKey + " Net"]) || 0;
+
+            let matchedCol = null;
+            for (let col of columns) {
+                try {
+                    if (col.check(item)) {
+                        matchedCol = col;
+                        break;
+                    }
+                } catch(e) {}
+            }
+            if (!matchedCol) matchedCol = columns.find(c => c.key === '20_GP') || columns[0];
+
+            containerSet.add(containerNo + "|" + matchedCol.key);
+
+            if (net > 0) {
+                totals[matchedCol.key] += net;
+            }
+        }
+
+        let countContainers = {};
+        columns.forEach(col => { countContainers[col.key] = 0; });
+        containerSet.forEach(key => {
+            let parts = key.split("|");
+            let colKey = parts[1];
+            if (countContainers[colKey] !== undefined) {
+                countContainers[colKey] += 1;
+            }
+        });
+
+        return { totals, countContainers };
+    }
+
+    // ===== 4. دالة لتجميع بيانات تبويب 7 (IMPRT + FORWARD) =====
+    function aggregateTab7(dataArray) {
+        let totals = {};
+        let containerSet = new Set();
+        columns.forEach(col => { totals[col.key] = 0; });
+
+        for (let item of dataArray) {
+            let containerNo = item["رقم الحاوية"] || "";
+            if (!containerNo) continue;
+
+            let net = parseFloat(item["Net"]) || 0;
+
+            let tempItem = {
+                "Type": item["النوع"] || "GP",
+                "Size": item["الحجم"] || "",
+                "Is Refrigerated": item["مبرد"] === "✅",
+                "Is OOG": item["OOG"] === "✅",
+                "Is Hazardous": item["خطر"] === "✅"
+            };
+
+            let matchedCol = null;
+            for (let col of columns) {
+                try {
+                    if (col.check(tempItem)) {
+                        matchedCol = col;
+                        break;
+                    }
+                } catch(e) {}
+            }
+            if (!matchedCol) matchedCol = columns.find(c => c.key === '20_GP') || columns[0];
+
+            containerSet.add(containerNo + "|" + matchedCol.key);
+
+            if (net > 0) {
+                totals[matchedCol.key] += net;
+            }
+        }
+
+        let countContainers = {};
+        columns.forEach(col => { countContainers[col.key] = 0; });
+        containerSet.forEach(key => {
+            let parts = key.split("|");
+            let colKey = parts[1];
+            if (countContainers[colKey] !== undefined) {
+                countContainers[colKey] += 1;
+            }
+        });
+
+        return { totals, countContainers };
+    }
+
+    // ===== 5. دالة لتجميع بيانات تبويب 8 (Storage Finalout) =====
+    function aggregateTab8(dataArray) {
+        let totals = {};
+        let containerSet = new Set();
+        columns.forEach(col => { totals[col.key] = 0; });
+
+        for (let item of dataArray) {
+            let containerNo = item["رقم الحاوية"] || "";
+            if (!containerNo) continue;
+
+            let days = parseFloat(item["أيام التخزين (جديد)"]) || 0;
+
+            let type = item["النوع"] || "";
+            let size = item["الحجم"] || "";
+            let isRef = type.includes("R") || type.includes("RF");
+            let isOOG = type.includes("OOG");
+            let isHazard = type.includes("Hazard") || type.includes("DG");
+
+            let tempItem = {
+                "Type": type,
+                "Size": size,
+                "Is Refrigerated": isRef,
+                "Is OOG": isOOG,
+                "Is Hazardous": isHazard
+            };
+
+            let matchedCol = null;
+            for (let col of columns) {
+                try {
+                    if (col.check(tempItem)) {
+                        matchedCol = col;
+                        break;
+                    }
+                } catch(e) {}
+            }
+            if (!matchedCol) matchedCol = columns.find(c => c.key === '20_GP') || columns[0];
+
+            containerSet.add(containerNo + "|" + matchedCol.key);
+
+            if (days > 0) {
+                totals[matchedCol.key] += days;
+            }
+        }
+
+        let countContainers = {};
+        columns.forEach(col => { countContainers[col.key] = 0; });
+        containerSet.forEach(key => {
+            let parts = key.split("|");
+            let colKey = parts[1];
+            if (countContainers[colKey] !== undefined) {
+                countContainers[colKey] += 1;
+            }
+        });
+
+        return { totals, countContainers };
+    }
+
+    // ===== 6. تجميع الفئات المطلوبة =====
+
+	// 6.1 EXPRT عادي (من 1,2,3,6 مع استبعاد TRUE)
+	let exprNormalData = [];
+	[1, 2, 3, 6].forEach(tabKey => {
+		let data = dataSources['tab' + tabKey];
+		let filtered = data.filter(item => {
+			let flex = item["Flex String 01"] || "";
+			// 🆕 استبعاد RETURN
+			let drayStatus = item["Dray Status"] || "";
+			return flex !== "TRUE" && drayStatus !== "RETURN";
+		});
+		exprNormalData = exprNormalData.concat(filtered);
+	});
+	let exprNormalAgg = aggregateItems(exprNormalData, 'EXPRT', null);
+
+    // 6.2 EXPRT خاص (من 1,2,3,6 مع TRUE فقط)
+// 6.2 EXPRT خاص (من 1,2,3,6 مع TRUE فقط)
+let exprSpecialData = [];
+[1, 2, 3, 6].forEach(tabKey => {
+    let data = dataSources['tab' + tabKey];
+    let filtered = data.filter(item => {
+        let flex = item["Flex String 01"] || "";
+        // 🆕 استبعاد RETURN
+        let drayStatus = item["Dray Status"] || "";
+        return flex === "TRUE" && drayStatus !== "RETURN";
+    });
+    exprSpecialData = exprSpecialData.concat(filtered);
+});
+let exprSpecialAgg = aggregateItems(exprSpecialData, 'EXPRT', null);
+
+    // 6.3 TRSHP من تبويب 1 فقط
+    let trshpTab1Agg = aggregateItems(dataSources.tab1, 'TRSHP', null);
+
+    // 6.4 STRGE مجمع (من 2 و 6)
+    let strge26Data = [];
+    [2, 6].forEach(tabKey => {
+        strge26Data = strge26Data.concat(dataSources['tab' + tabKey]);
+    });
+    let strge26Agg = aggregateItems(strge26Data, 'STRGE', null);
+
+    // 6.5 STRGE من تبويب 4 فقط
+    let strgeTab4Agg = aggregateItems(dataSources.tab4, 'STRGE', null);
+
+    // 6.6 تبويب 5 (TRSHP فقط)
+    let tab5Agg = aggregateItems(dataSources.tab5, 'TRSHP', null);
+
+    // 6.7 تبويب 7 (IMPRT + FORWARD)
+    let tab7Agg = aggregateTab7(dataSources.tab7);
+
+    // 6.8 تبويب 8 (Storage Finalout)
+    let tab8Agg = aggregateTab8(dataSources.tab8);
+
+    // ===== 6.9 Power Export (RF من EXPRT عادي) =====
+    function calculatePowerExport(dataArray) {
+        let totals = {};
+        let containerSet = new Set();
+        columns.forEach(col => { totals[col.key] = 0; });
+
+        for (let item of dataArray) {
+            // 1. بس الحاويات المبردة
+            let isRefrigerated = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            if (!isRefrigerated) continue;
+
+            let containerNo = item["Container No."] || "";
+            if (!containerNo) continue;
+
+            // 2. أيام الطاقة = EXPRT Days (قبل الخصم)
+            let days = parseFloat(item["EXPRT Days"]) || 0;
+
+            // 3. نوع الحاوية
+            let matchedCol = null;
+            for (let col of columns) {
+                try {
+                    if (col.check(item)) {
+                        matchedCol = col;
+                        break;
+                    }
+                } catch(e) {}
+            }
+            if (!matchedCol) matchedCol = columns.find(c => c.key === '20_GP') || columns[0];
+
+            containerSet.add(containerNo + "|" + matchedCol.key);
+            if (days > 0) {
+                totals[matchedCol.key] += days;
+            }
+        }
+
+        // عدد الحاويات الفريدة
+        let countContainers = {};
+        columns.forEach(col => { countContainers[col.key] = 0; });
+        containerSet.forEach(key => {
+            let parts = key.split("|");
+            let colKey = parts[1];
+            if (countContainers[colKey] !== undefined) {
+                countContainers[colKey] += 1;
+            }
+        });
+
+        return { totals, countContainers };
+    }
+
+    // ===== حساب Power Export =====
+    let powerExportAgg = calculatePowerExport(exprNormalData);        // العادي
+    let powerExportSpecialAgg = calculatePowerExport(exprSpecialData); // الخاص
+
+    // ===== 6.11 RF من تبويب 5 (TRSHP فقط) =====
+    function calculateTab5RF(dataArray) {
+        let totals = {};
+        let containerSet = new Set();
+        columns.forEach(col => { totals[col.key] = 0; });
+
+        for (let item of dataArray) {
+            // التحقق من Is Refrigerated بمرونة
+            let isRefrigerated = false;
+            let refValue = item["Is Refrigerated"];
+            if (refValue === "true" || refValue === true || refValue === "TRUE" || 
+                refValue === 1 || refValue === "1" || refValue === "Yes" || refValue === "yes") {
+                isRefrigerated = true;
+            }
+            
+            if (!isRefrigerated) continue;
+
+            let containerNo = item["Container No."] || "";
+            if (!containerNo) continue;
+
+            // استخدام TRSHP Days (قبل الخصم)
+            let days = parseFloat(item["TRSHP Days"]) || 0;
+
+            let matchedCol = null;
+            for (let col of columns) {
+                try {
+                    if (col.check(item)) {
+                        matchedCol = col;
+                        break;
+                    }
+                } catch(e) {}
+            }
+            if (!matchedCol) matchedCol = columns.find(c => c.key === '20_GP') || columns[0];
+
+            containerSet.add(containerNo + "|" + matchedCol.key);
+
+            if (days > 0) {
+                totals[matchedCol.key] += days;
+            }
+        }
+
+        let countContainers = {};
+        columns.forEach(col => { countContainers[col.key] = 0; });
+        containerSet.forEach(key => {
+            let parts = key.split("|");
+            let colKey = parts[1];
+            if (countContainers[colKey] !== undefined) {
+                countContainers[colKey] += 1;
+            }
+        });
+
+        return { totals, countContainers };
+    }
+
+    let tab5RFAgg = calculateTab5RF(dataSources.tab5);
+
+    // ===== 7. معلومات السفينة =====
+    let vesselInfo = {
+        carrierName: "—",
+        shippingDate: "—",
+        lineId: "—"
+    };
+
+    for (let [id, container] of containersMap.entries()) {
+        let sourceData = null;
+        
+        if (container.exprtList && container.exprtList.length > 0) {
+            sourceData = container.exprtList[0];
+        } else if (container.exprt) {
+            sourceData = container.exprt;
+        } else if (container.trshpList && container.trshpList.length > 0) {
+            sourceData = container.trshpList[0];
+        } else if (container.trshp) {
+            sourceData = container.trshp;
+        } else if (container.strge) {
+            sourceData = container.strge;
+        } else if (container.imprt) {
+            sourceData = container.imprt;
+        } else if (container.trshpReturn) {
+            sourceData = container.trshpReturn;
+        }
+        
+        if (sourceData) {
+            if (vesselInfo.carrierName === "—") {
+                vesselInfo.carrierName = sourceData["O/B Carrier Name"] || sourceData["I/B Carrier Name"] || "—";
+            }
+            
+            let atd = sourceData["O/B Carrier ATD"] || sourceData["O/B Carrier ATA"] || sourceData["I/B Carrier ATD"] || "";
+            if (atd && atd !== "") {
+                if (vesselInfo.shippingDate === "—") {
+                    vesselInfo.shippingDate = atd;
+                }
+            }
+            
+            let lineId = sourceData["Line ID"];
+            if (lineId && lineId !== "" && vesselInfo.lineId === "—") {
+                vesselInfo.lineId = lineId;
+            }
+        }
+        
+        if (vesselInfo.carrierName !== "—" && vesselInfo.shippingDate !== "—" && vesselInfo.lineId !== "—") {
+            break;
+        }
+    }
+    
+    if (vesselInfo.carrierName === "—" && currentData1.length > 0) {
+        vesselInfo.carrierName = currentData1[0]["Vessel Name"] || currentData1[0]["O/B Carrier Name"] || currentData1[0]["I/B Carrier Name"] || "—";
+    }
+    
+    if (vesselInfo.shippingDate === "—" && currentData1.length > 0) {
+        vesselInfo.shippingDate = currentData1[0]["O/B Carrier ATD"] || currentData1[0]["O/B Carrier ATA"] || currentData1[0]["I/B Carrier ATD"] || "—";
+    }
+
+    let shippingDateDisplay = vesselInfo.shippingDate;
+    if (shippingDateDisplay && shippingDateDisplay !== "—") {
+        let converted = convertDate(shippingDateDisplay);
+        if (converted) shippingDateDisplay = converted;
+    }
+
+    let currentDate = new Date().toLocaleString('ar-EG', {
+        year: 'numeric', month: 'numeric', day: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+    });
+
+    // دوال عرض الخلايا
+    function renderDaysCell(total) {
+        if (total === 0) return `<td class="empty-cell">—</td>`;
+        return `<td class="num-days">${total} Day</td>`;
+    }
+
+    function renderCountCell(count) {
+        if (count === 0) return `<td class="empty-cell" style="font-size:10px;color:#999;">0</td>`;
+        let label = count === 1 ? "Cont" : "Cont";
+        return `<td class="num-containers" style="font-size:10px;color:#0a3d62;">${label}: ${count}</td>`;
+    }
+
+    // ===== 8. بناء HTML =====
+    let html = `
+        <!DOCTYPE html>
+        <html dir="rtl">
+        <head>
+            <meta charset="UTF-8">
+            <title>تقرير مجمع - أيام التخزين</title>
+            <style>
+                * { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; box-sizing: border-box; }
+                body { background: #f0f2f5; padding: 20px; direction: rtl; }
+                .report-container {
+                    max-width: 100%;
+                    margin: auto;
+                    background: white;
+                    border-radius: 16px;
+                    box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+                    padding: 25px;
+                    overflow-x: auto;
+                }
+                .report-header {
+                    text-align: center;
+                    padding-bottom: 15px;
+                    border-bottom: 2px solid #0a3d62;
+                    margin-bottom: 20px;
+                }
+                .report-header h1 {
+                    color: #0a3d62;
+                    font-size: 24px;
+                    margin: 0;
+                }
+                .report-header .vessel-info {
+                    display: flex;
+                    justify-content: center;
+                    gap: 30px;
+                    margin-top: 10px;
+                    font-size: 14px;
+                    color: #0a3d62;
+                    background: #f0f8ff;
+                    padding: 8px 20px;
+                    border-radius: 8px;
+                    border: 1px solid #cce5ff;
+                }
+                .report-header .vessel-info span { font-weight: bold; }
+                .report-date {
+                    text-align: left;
+                    font-size: 12px;
+                    color: #6c757d;
+                    margin-bottom: 15px;
+                }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 10px;
+                    border: 2px solid #0a3d62;
+                }
+                th, td {
+                    border: 1px solid #dee2e6;
+                    padding: 4px 3px;
+                    text-align: center;
+                    vertical-align: middle;
+                }
+                .col-header { background: #0a3d62; color: white; font-weight: bold; font-size: 10px; }
+                .col-sub-header { background: #1a5a7a; color: white; font-size: 9px; }
+                .col-sub-header-small { background: #2a7a9a; color: white; font-size: 8px; }
+
+                .category-row { background: #d1ecf1; }
+                .category-row td:first-child { background: #b8d4de; padding-right: 10px; font-weight: bold; }
+                .special-row { background: #fce4ec; }
+                .special-row td:first-child { background: #f8bbd0; padding-right: 10px; font-weight: bold; color: #880e4f; }
+                .trshp-row { background: #d4edda; }
+                .trshp-row td:first-child { background: #b7d7c8; padding-right: 10px; font-weight: bold; }
+                .strge-row { background: #cce5ff; }
+                .strge-row td:first-child { background: #b0d4ee; padding-right: 10px; font-weight: bold; }
+                .strge-tab4-row { background: #fff3cd; }
+                .strge-tab4-row td:first-child { background: #f8e8a0; padding-right: 10px; font-weight: bold; }
+                .count-row { background: #f8f9fa; }
+                .count-row td:first-child { background: #e9ecef; padding-right: 10px; font-weight: bold; }
+                .tab5-row { background: #d5f5e3; }
+                .tab5-row td:first-child { background: #a9dfbf; padding-right: 10px; font-weight: bold; }
+                .tab7-row { background: #fadbd8; }
+                .tab7-row td:first-child { background: #f5b7b1; padding-right: 10px; font-weight: bold; }
+                .tab8-row { background: #e8daef; }
+                .tab8-row td:first-child { background: #d2b4de; padding-right: 10px; font-weight: bold; }
+                .power-row { background: #e3f2fd; }
+                .power-row td:first-child { background: #bbdefb; padding-right: 10px; font-weight: bold; color: #0d47a1; }
+                .power-special-row { background: #fce4ec; }
+                .power-special-row td:first-child { background: #f8bbd0; padding-right: 10px; font-weight: bold; color: #880e4f; }
+                .rf-tab5-row { background: #d5f5e3; }
+                .rf-tab5-row td:first-child { background: #a9dfbf; padding-right: 10px; font-weight: bold; color: #1a6e3a; }
+
+                .num-days { color: #1e6f5c; font-weight: bold; }
+                .num-containers { color: #0a3d62; font-weight: bold; }
+                .empty-cell { color: #adb5bd; font-style: italic; }
+
+                .footer {
+                    margin-top: 20px;
+                    text-align: center;
+                    font-size: 12px;
+                    color: #6c757d;
+                    padding-top: 15px;
+                    border-top: 1px solid #dee2e6;
+                }
+
+                .print-btn {
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    padding: 10px 24px;
+                    background: #0a3d62;
+                    color: white;
+                    border: none;
+                    border-radius: 30px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    z-index: 1000;
+                }
+                .print-btn:hover { background: #1a5a7a; }
+                .close-btn {
+                    position: fixed;
+                    top: 20px;
+                    right: 160px;
+                    padding: 10px 24px;
+                    background: #dc3545;
+                    color: white;
+                    border: none;
+                    border-radius: 30px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    z-index: 1000;
+                }
+                .close-btn:hover { background: #c82333; }
+
+                @media print {
+                    body { background: white; padding: 10px; }
+                    .report-container { box-shadow: none; border-radius: 0; padding: 10px; }
+                    .print-btn, .close-btn { display: none; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="report-container">
+                <div class="report-header">
+                    <div class="vessel-info">
+                        <div>🚢 <span>السفينة:</span> ${vesselInfo.carrierName}</div>
+                        <div>📅 <span>تاريخ الرحلة:</span> ${shippingDateDisplay}</div>
+                        <div>🏷️ <span>الخط:</span> ${vesselInfo.lineId}</div>
+                        <div>📅 <span>تاريخ التقرير:</span> ${currentDate}</div>
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th rowspan="3" style="background:#0a3d62; color:white; width:180px; min-width:150px; vertical-align:middle;">
+                                الفئة
+                            </th>
+                            <th colspan="${columns.length}" style="background:#0a3d62; color:white; font-size:12px;">
+                                أنواع ومقاسات الحاويات
+                            </th>
+                        </tr>
+                        <tr>
+                            ${columns.map(col => `<th colspan="1" class="col-sub-header">${col.label}</th>`).join('')}
+                        </tr>
+                        <tr>
+                            ${columns.map(col => `<th class="col-sub-header-small">أيام</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- 1. EXPRT عادي -->
+                        <tr class="category-row">
+                            <td style="padding-right:10px; font-weight:bold;">📤 Full Export Storage Days</td>
+                            ${columns.map(col => renderDaysCell(exprNormalAgg.totals[col.key] || 0)).join('')}
+                        </tr>
+                        <!-- Power Export (RF) بعد EXPRT عادي مباشرة -->
+                        <tr class="power-row">
+                            <td style="padding-right:10px; font-weight:bold;">⚡ Full Export Power Days</td>
+                            ${columns.map(col => renderDaysCell(powerExportAgg.totals[col.key] || 0)).join('')}
+                        </tr>
+                        <tr class="count-row">
+                            <td style="padding-right:10px; font-weight:bold;">📊 Full Export Count Normal</td>
+                            ${columns.map(col => renderCountCell(exprNormalAgg.countContainers[col.key] || 0)).join('')}
+                        </tr>
+
+                        <!-- 2. EXPRT خاص -->
+                        <tr class="special-row">
+                            <td style="padding-right:10px; font-weight:bold;">⭐ Full Re_Export Storage Days</td>
+                            ${columns.map(col => renderDaysCell(exprSpecialAgg.totals[col.key] || 0)).join('')}
+                        </tr>
+                        <!-- Full Re_Export Power Days بعد EXPRT خاص مباشرة -->
+                        <tr class="power-special-row">
+                            <td style="padding-right:10px; font-weight:bold;">⚡ Full Re_Export Power Days ⭐</td>
+                            ${columns.map(col => renderDaysCell(powerExportSpecialAgg.totals[col.key] || 0)).join('')}
+                        </tr>
+                        <tr class="count-row">
+                            <td style="padding-right:10px; font-weight:bold;">📊 Full Re_Export Count</td>
+                            ${columns.map(col => renderCountCell(exprSpecialAgg.countContainers[col.key] || 0)).join('')}
+                        </tr>
+
+                        <!-- 3. TRSHP من تبويب 1 -->
+                        <tr class="trshp-row">
+                            <td style="padding-right:10px; font-weight:bold;">🚛 Empty Transit Storage(L.Full)</td>
+                            ${columns.map(col => renderDaysCell(trshpTab1Agg.totals[col.key] || 0)).join('')}
+                        </tr>
+
+                        <!-- 4. STRGE مجمع 2 و 6 -->
+                        <tr class="strge-row">
+                            <td style="padding-right:10px; font-weight:bold;">📦Empty Export Storage(L.Full)</td>
+                            ${columns.map(col => renderDaysCell(strge26Agg.totals[col.key] || 0)).join('')}
+                        </tr>
+
+                        <!-- 5. Empty Export Storage(L.Emtpy) -->
+                        <tr class="strge-tab4-row">
+                            <td style="padding-right:10px; font-weight:bold;">📦 Empty Export Storage(L.Empty)</td>
+                            ${columns.map(col => renderDaysCell(strgeTab4Agg.totals[col.key] || 0)).join('')}
+                        </tr>
+                        <tr class="count-row">
+                            <td style="padding-right:10px; font-weight:bold;">📊 Empty Export Count</td>
+                            ${columns.map(col => renderCountCell(strgeTab4Agg.countContainers[col.key] || 0)).join('')}
+                        </tr>
+
+                        <!-- 6. تبويب 5 -->
+                        <tr class="tab5-row">
+                            <td style="padding-right:10px; font-weight:bold;">🚛 Transit Only Storage Days</td>
+                            ${columns.map(col => renderDaysCell(tab5Agg.totals[col.key] || 0)).join('')}
+                        </tr>
+                        <!-- RF (تبويب 5) بعد TRSHP فقط مباشرة -->
+                        <tr class="rf-tab5-row">
+                            <td style="padding-right:10px; font-weight:bold;">❄️ Transit Only Power Days</td>
+                            ${columns.map(col => renderDaysCell(tab5RFAgg.totals[col.key] || 0)).join('')}
+                        </tr>
+                        <tr class="count-row">
+                            <td style="padding-right:10px; font-weight:bold;">📊 Transit Only Count</td>
+                            ${columns.map(col => renderCountCell(tab5Agg.countContainers[col.key] || 0)).join('')}
+                        </tr>
+
+                        <!-- 7. تبويب 7 -->
+                        <tr class="tab7-row">
+                            <td style="padding-right:10px; font-weight:bold;">📥 FORWARD Storage Days</td>
+                            ${columns.map(col => renderDaysCell(tab7Agg.totals[col.key] || 0)).join('')}
+                        </tr>
+                        <tr class="count-row">
+                            <td style="padding-right:10px; font-weight:bold;">📊 FORWARD Storage Count</td>
+                            ${columns.map(col => renderCountCell(tab7Agg.countContainers[col.key] || 0)).join('')}
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <script>
+                let printBtn = document.createElement('button');
+                printBtn.className = 'print-btn';
+                printBtn.textContent = '🖨️ طباعة التقرير';
+                printBtn.onclick = function() { window.print(); };
+                document.body.appendChild(printBtn);
+
+                let closeBtn = document.createElement('button');
+                closeBtn.className = 'close-btn';
+                closeBtn.textContent = '✖ إغلاق';
+                closeBtn.onclick = function() { window.close(); };
+                document.body.appendChild(closeBtn);
+            <\/script>
+        </body>
+        </html>
+    `;
+
+    let reportWindow = window.open('', '_blank', 'width=1400,height=800,scrollbars=yes');
+    if (!reportWindow) {
+        alert("الرجاء السماح للنوافذ المنبثقة لعرض التقرير");
+        return;
+    }
+    reportWindow.document.write(html);
+    reportWindow.document.close();
+    console.log("✅ تم إنشاء التقرير المجمع بنجاح");
+}
 
 // ============================================================
 // ========== دوال تحميل الإعدادات من GitHub تلقائياً ==========
@@ -6733,12 +9080,61 @@ applyColumnPreferencesFromGitHub();
     console.log('✅ [GitHub] تم تطبيق الإعدادات بنجاح');
 }
 
+// ========== تحديث Header لتبويب 8 ==========
+// ========== تحديث Header لتبويب 8 ==========
+function updateStorageFinaloutHeader(headerInfo) {
+    // البحث عن العناصر الخاصة بتبويب 8
+    let orderNumberSpan = document.getElementById("headerOrderNumber");
+    let lineOpSpan = document.getElementById("headerLineOp");
+    let countSpan = document.getElementById("headerCount");
+
+    // إذا لم تكن العناصر موجودة، نقوم بإنشائها داخل headerInfo دون مسح المحتوى الأصلي
+    if (!orderNumberSpan) {
+        let headerDiv = document.getElementById("headerInfo");
+        if (headerDiv) {
+            // نضيف عناصر جديدة بجانب العناصر القديمة (بدون مسحها)
+            let newDiv = document.createElement('div');
+            newDiv.id = 'finaloutHeader';
+            newDiv.style.marginTop = '10px';
+            newDiv.style.paddingTop = '10px';
+            newDiv.style.borderTop = '1px solid rgba(255,255,255,0.2)';
+            newDiv.innerHTML = `
+                <div>📋 <strong>رقم الأمر (Order Number):</strong> <span id="headerOrderNumber">—</span></div>
+                <div>🚢 <strong>الخط المشغل (Line Op):</strong> <span id="headerLineOp">—</span></div>
+                <div>📦 <strong>عدد الحاويات:</strong> <span id="headerCount">0</span></div>
+            `;
+            headerDiv.appendChild(newDiv);
+        }
+        // إعادة الحصول على العناصر بعد إنشائها
+        orderNumberSpan = document.getElementById("headerOrderNumber");
+        lineOpSpan = document.getElementById("headerLineOp");
+        countSpan = document.getElementById("headerCount");
+    }
+
+    // تحديث قيم العناصر
+    if (orderNumberSpan) orderNumberSpan.textContent = headerInfo.orderNumber || "—";
+    if (lineOpSpan) lineOpSpan.textContent = headerInfo.lineOp || "—";
+    if (countSpan) countSpan.textContent = currentData8.length || 0;
+
+    // إظهار عناصر تبويب 8 وإخفاء العناصر الأصلية حسب التبويب النشط
+    // لكننا سنتركها ظاهرة دائماً، ويمكن إخفاؤها عند تحميل ملف عادي
+    // لكن الأفضل إظهار/إخفاء حسب وجود بيانات finalout
+    let finaloutHeader = document.getElementById("finaloutHeader");
+    if (finaloutHeader) {
+        if (currentData8 && currentData8.length > 0) {
+            finaloutHeader.style.display = 'block';
+        } else {
+            finaloutHeader.style.display = 'none';
+        }
+    }
+}
 // ===== استدعاء التحميل عند فتح الصفحة =====
 // هذا السطر سيتم تنفيذه بعد تحميل الصفحة بالكامل
 document.addEventListener("DOMContentLoaded", function() {
     // تأخير بسيط لضمان جاهزية كل شيء
     setTimeout(loadSettingsFromGitHub, 500);
 });
+
 
 // ============================================================
 // ===== دالة تطبيق تفضيلات الأعمدة من GitHub =====
@@ -6773,3 +9169,823 @@ function applyColumnPreferencesFromGitHub() {
         console.warn('⚠️ فشل تطبيق تفضيلات الأعمدة:', error);
     }
 }
+
+// ============================================================
+// 🔍 دالة شاملة لفحص جميع حقول ملف Excel
+// ============================================================
+function checkExcelFields(rows, fileType = "main") {
+    
+    // ============================================
+    // القائمة الكاملة لجميع الحقول (47 حقل)
+    // ============================================
+    const ALL_MAIN_FIELDS = [
+        //"Batch ID",
+        //"Event Type",
+        //"Status",
+        "Equip ID",
+        "Line ID",
+        "Freight Kind",
+        "Equipment Type",
+        "Dray Status",
+        "Flex String 32",
+        "Notes",
+        "I/B Carrier ATA",
+        "O/B Carrier ATA",
+        "O/B Carrier ATD",
+        "Flex String 36",
+        "ISO Group",
+        "ISO Length",
+        "ISO Height",
+        "Category",
+        "Is OOG",
+        "Is Refrigerated",
+        "Flex String 04",
+        "Is Bundled",
+        "Is Hazardous",
+        "IMDG Class",
+        "Commodity ID",
+        "Start Time",
+        "End Time",
+        "PaidThruDate",
+        "Rule Start Time",
+        "Rule End Time",
+        "First Availability Day",
+        "Quay CheID",
+        "Is Locked",
+        "I/B Loc Type",
+        "I/B ID",
+        "I/B Visit ID",
+        "I/B Carrier Name",
+        "I/B Call Nbr",
+        "O/B Loc Type",
+        "O/B ID",
+        "O/B Visit ID",
+        "O/B Carrier Name",
+        "O/B Call Nbr",
+        "Flex String 01",
+        "Flex String 02",
+        "Flex String 21",
+        "Flex String 22"
+    ];
+    
+    // ============================================
+    // الحقول المطلوبة في ملف FINALOUT (12 حقل)
+    // ============================================
+    const ALL_FINALOUT_FIELDS = [
+        "Unit Nbr",
+        "Type ISO",
+        "Category",
+        "Orig",
+        "Dray Status",
+        "Order Number",
+        "Time In",
+        "Time Out",
+        "Storage Days Total",
+        "LCL-POSS",
+        "Line Op",
+        "Frght Kind"
+    ];
+    
+    // ============================================
+    // التحقق من وجود البيانات
+    // ============================================
+    if (!rows || rows.length === 0) {
+        alert("⚠️ الملف فارغ أو لا يحتوي على بيانات.");
+        return { valid: false, missing: ["الملف فارغ"], actualFields: [] };
+    }
+    
+    // ============================================
+    // تحديد قائمة الحقول حسب نوع الملف
+    // ============================================
+    let requiredFields = (fileType === "finalout") ? ALL_FINALOUT_FIELDS : ALL_MAIN_FIELDS;
+    
+    // ============================================
+    // الحصول على الأعمدة الفعلية
+    // ============================================
+    let actualFields = Object.keys(rows[0]).map(k => k.toString().trim());
+    console.log("🔍 الأعمدة الموجودة في الملف:", actualFields);
+    console.log(`📊 عدد الأعمدة الفعلية: ${actualFields.length}`);
+    console.log(`📊 عدد الحقول المطلوبة: ${requiredFields.length}`);
+    
+    // ============================================
+    // البحث عن الحقول الناقصة
+    // ============================================
+    let missingFields = [];
+    for (let field of requiredFields) {
+        let found = actualFields.some(f => 
+            f === field || 
+            f.toLowerCase() === field.toLowerCase() ||
+            f.replace(/\s+/g, '') === field.replace(/\s+/g, '')
+        );
+        if (!found) {
+            missingFields.push(field);
+        }
+    }
+    
+    // ============================================
+    // عرض النتيجة
+    // ============================================
+    if (missingFields.length > 0) {
+        let fileTypeLabel = (fileType === "finalout") 
+            ? "ملف FINALOUT (تبويب 8)" 
+            : "ملف البيانات الرئيسي (التبويبات 1-7)";
+        
+        let missingList = missingFields.map(f => `  ❌ ${f}`).join("\n");
+        
+        let message = `⚠️ لا يمكن تحميل الملف!\n\n`;
+        message += `نوع الملف: ${fileTypeLabel}\n\n`;
+        message += `الحقول التالية مفقودة (${missingFields.length} حقل):\n${missingList}\n\n`;
+        message += `يرجى التأكد من أن ملف Excel يحتوي على جميع الحقول المطلوبة.`;
+        
+        alert(message);
+        
+        let footer = document.getElementById("footerMsg");
+        if (footer) {
+            footer.innerHTML = `❌ فشل التحميل: ${missingFields.length} حقل مفقود — ${missingFields.join(" | ")}`;
+            footer.style.color = "#dc3545";
+            footer.style.fontWeight = "bold";
+        }
+        
+        console.error("❌ الحقول المفقودة:", missingFields);
+        console.error("❌ عدد الحقول المفقودة:", missingFields.length);
+        
+        return { valid: false, missing: missingFields, actualFields: actualFields };
+    }
+    
+    // ============================================
+    // جميع الحقول موجودة
+    // ============================================
+    console.log("✅ جميع الحقول المطلوبة موجودة");
+    console.log(`✅ تم فحص ${requiredFields.length} حقل بنجاح`);
+    return { valid: true, missing: [], actualFields: actualFields };
+}
+
+// ============================================================
+// 📊 تقرير مجمع تفاعلي - دالة مستقلة
+// ============================================================
+
+function generateInteractiveConsolidatedReport() {
+    console.log("🔍 بدء إنشاء التقرير المجمع التفاعلي...");
+
+    // ===== 1. تجهيز البيانات =====
+    const dataSources = {
+        tab1: currentData1 || [],
+        tab2: currentData2 || [],
+        tab3: currentData3 || [],
+        tab4: currentData4 || [],
+        tab5: currentData5 || [],
+        tab6: currentData6 || [],
+        tab7: currentData7 || [],
+        tab8: currentData8 || []
+    };
+
+    const totalRows = Object.values(dataSources).reduce((sum, arr) => sum + arr.length, 0);
+    if (totalRows === 0) {
+        alert("⚠️ لا توجد بيانات. يرجى تحميل ملف Excel أولاً.");
+        return;
+    }
+
+    // ===== 2. تعريف الأنواع والمقاسات =====
+    const sizeTypes = [
+        { size: '20', label: '20\'', check: (item) => {
+            let s = (item["Size"] || "").toString();
+            return s.startsWith("2") || s === "20";
+        }},
+        { size: '40', label: '40\'', check: (item) => {
+            let s = (item["Size"] || "").toString();
+            return s.startsWith("4") || s.startsWith("95") || s.startsWith("42") || s.startsWith("45");
+        }}
+    ];
+
+    const containerTypes = [
+        { key: 'GP', label: 'GP', check: (item) => {
+            let type = item["Type"] || "";
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            return type === "GP" && !isOOG && !isHazard && !isRef;
+        }},
+        { key: 'RF', label: 'RF', check: (item) => {
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            return isRef && !isOOG && !isHazard;
+        }},
+        { key: 'OOG', label: 'OOG', check: (item) => {
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            return isOOG && !isRef && !isHazard;
+        }},
+        { key: 'Hazard', label: 'Hazard', check: (item) => {
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            return isHazard && !isOOG && !isRef;
+        }},
+        { key: 'RF_OOG', label: 'RF+OOG', check: (item) => {
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            return isRef && isOOG && !isHazard;
+        }},
+        { key: 'RF_Hazard', label: 'RF+Hazard', check: (item) => {
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            return isRef && isHazard && !isOOG;
+        }},
+        { key: 'OOG_Hazard', label: 'OOG+Hazard', check: (item) => {
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            return isOOG && isHazard && !isRef;
+        }},
+        { key: 'RF_OOG_Hazard', label: 'RF+OOG+Hazard', check: (item) => {
+            let isRef = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            let isOOG = item["Is OOG"] === "true" || item["Is OOG"] === true;
+            let isHazard = item["Is Hazardous"] === "true" || item["Is Hazardous"] === true;
+            return isRef && isOOG && isHazard;
+        }}
+    ];
+
+    let columns = [];
+    for (let type of containerTypes) {
+        for (let size of sizeTypes) {
+            let colKey = size.size + '_' + type.key;
+            columns.push({
+                key: colKey,
+                label: size.label + ' ' + type.label,
+                check: (item) => type.check(item) && size.check(item)
+            });
+        }
+    }
+
+    // ===== 3. دالة تجميع مع تخزين تفاصيل الحاويات =====
+    function aggregateWithDetails(dataArray, categoryKey, filterFn = null) {
+        let totals = {};
+        let containerSet = new Set();
+        let details = {};
+        columns.forEach(col => {
+            totals[col.key] = 0;
+            details[col.key] = [];
+        });
+
+        for (let item of dataArray) {
+            if (filterFn && !filterFn(item)) continue;
+
+            let containerNo = item["Container No."] || item["رقم الحاوية"] || "";
+            if (!containerNo) continue;
+
+            let net = parseFloat(item[categoryKey + " Net"]) || 0;
+
+            let matchedCol = null;
+            for (let col of columns) {
+                try {
+                    if (col.check(item)) {
+                        matchedCol = col;
+                        break;
+                    }
+                } catch(e) {}
+            }
+            if (!matchedCol) matchedCol = columns.find(c => c.key === '20_GP') || columns[0];
+
+            containerSet.add(containerNo + "|" + matchedCol.key);
+
+            if (net > 0) {
+                details[matchedCol.key].push({
+                    "Container No.": containerNo,
+                    "Line ID": item["Line ID"] || "",
+                    "Size": item["Size"] || "",
+                    "Type": item["Type"] || "",
+                    "Is OOG": item["Is OOG"] || "false",
+                    "Is Refrigerated": item["Is Refrigerated"] || "false",
+                    "Is Hazardous": item["Is Hazardous"] || "false",
+                    "IMDG Class": item["IMDG Class"] || "",
+                    "Dray Status": item["Dray Status"] || "",
+                    "Flex String 01": item["Flex String 01"] || "",
+                    "Flex String 04": item["flex_04"] || item["Flex String 04"] || "",
+                    "Category": categoryKey,
+                    "Start": item[categoryKey + " Start"] || "",
+                    "End": item[categoryKey + " End"] || "",
+                    "Days": item[categoryKey + " Days"] || 0,
+                    "Free": item[categoryKey + " Free"] || 0,
+                    "Net": net,
+                    "Vessel Name": item["Vessel Name"] || ""
+                });
+                totals[matchedCol.key] += net;
+            }
+        }
+
+        let countContainers = {};
+        columns.forEach(col => { countContainers[col.key] = 0; });
+        containerSet.forEach(key => {
+            let parts = key.split("|");
+            let colKey = parts[1];
+            if (countContainers[colKey] !== undefined) {
+                countContainers[colKey] += 1;
+            }
+        });
+
+        return { totals, countContainers, details };
+    }
+
+    // ===== 4. تجميع الفئات =====
+
+    // EXPRT عادي
+    let exprNormalData = [];
+    [1, 2, 3, 6].forEach(tabKey => {
+        let data = dataSources['tab' + tabKey];
+        let filtered = data.filter(item => {
+            let flex = item["Flex String 01"] || "";
+            let drayStatus = item["Dray Status"] || "";
+            return flex !== "TRUE" && drayStatus !== "RETURN";
+        });
+        exprNormalData = exprNormalData.concat(filtered);
+    });
+    let exprNormalAgg = aggregateWithDetails(exprNormalData, 'EXPRT', null);
+
+    // EXPRT خاص
+    let exprSpecialData = [];
+    [1, 2, 3, 6].forEach(tabKey => {
+        let data = dataSources['tab' + tabKey];
+        let filtered = data.filter(item => {
+            let flex = item["Flex String 01"] || "";
+            let drayStatus = item["Dray Status"] || "";
+            return flex === "TRUE" && drayStatus !== "RETURN";
+        });
+        exprSpecialData = exprSpecialData.concat(filtered);
+    });
+    let exprSpecialAgg = aggregateWithDetails(exprSpecialData, 'EXPRT', null);
+
+    // TRSHP من تبويب 1
+    let trshpTab1Agg = aggregateWithDetails(dataSources.tab1, 'TRSHP', null);
+
+    // STRGE مجمع 2 و 6
+    let strge26Data = [];
+    [2, 6].forEach(tabKey => {
+        strge26Data = strge26Data.concat(dataSources['tab' + tabKey]);
+    });
+    let strge26Agg = aggregateWithDetails(strge26Data, 'STRGE', null);
+
+    // STRGE من تبويب 4
+    let strgeTab4Agg = aggregateWithDetails(dataSources.tab4, 'STRGE', null);
+
+    // تبويب 5 (TRSHP فقط)
+    let tab5Agg = aggregateWithDetails(dataSources.tab5, 'TRSHP', null);
+
+    // تبويب 7
+    let tab7Agg = aggregateWithDetails(dataSources.tab7, 'Net', null);
+
+    // ===== 5. Power Export =====
+    function calculatePowerWithDetails(dataArray) {
+        let totals = {};
+        let containerSet = new Set();
+        let details = {};
+        columns.forEach(col => {
+            totals[col.key] = 0;
+            details[col.key] = [];
+        });
+
+        for (let item of dataArray) {
+            let isRefrigerated = item["Is Refrigerated"] === "true" || item["Is Refrigerated"] === true;
+            if (!isRefrigerated) continue;
+
+            let containerNo = item["Container No."] || "";
+            if (!containerNo) continue;
+
+            let days = parseFloat(item["EXPRT Days"]) || 0;
+
+            let matchedCol = null;
+            for (let col of columns) {
+                try {
+                    if (col.check(item)) {
+                        matchedCol = col;
+                        break;
+                    }
+                } catch(e) {}
+            }
+            if (!matchedCol) matchedCol = columns.find(c => c.key === '20_GP') || columns[0];
+
+            containerSet.add(containerNo + "|" + matchedCol.key);
+
+            if (days > 0) {
+                details[matchedCol.key].push({
+                    "Container No.": containerNo,
+                    "Line ID": item["Line ID"] || "",
+                    "Size": item["Size"] || "",
+                    "Type": item["Type"] || "",
+                    "Is Refrigerated": "true",
+                    "Dray Status": item["Dray Status"] || "",
+                    "Flex String 01": item["Flex String 01"] || "",
+                    "Category": "POWER",
+                    "Start": item["EXPRT Start"] || "",
+                    "End": item["EXPRT End"] || "",
+                    "Days": days,
+                    "Free": item["EXPRT Free"] || 0,
+                    "Net": days,
+                    "Vessel Name": item["Vessel Name"] || ""
+                });
+                totals[matchedCol.key] += days;
+            }
+        }
+
+        let countContainers = {};
+        columns.forEach(col => { countContainers[col.key] = 0; });
+        containerSet.forEach(key => {
+            let parts = key.split("|");
+            let colKey = parts[1];
+            if (countContainers[colKey] !== undefined) {
+                countContainers[colKey] += 1;
+            }
+        });
+
+        return { totals, countContainers, details };
+    }
+
+    let powerExportAgg = calculatePowerWithDetails(exprNormalData);
+    let powerExportSpecialAgg = calculatePowerWithDetails(exprSpecialData);
+
+    // RF من تبويب 5
+    function calculateTab5RFWithDetails(dataArray) {
+        let totals = {};
+        let containerSet = new Set();
+        let details = {};
+        columns.forEach(col => {
+            totals[col.key] = 0;
+            details[col.key] = [];
+        });
+
+        for (let item of dataArray) {
+            let isRefrigerated = false;
+            let refValue = item["Is Refrigerated"];
+            if (refValue === "true" || refValue === true || refValue === "TRUE" || refValue === 1 || refValue === "1") {
+                isRefrigerated = true;
+            }
+            if (!isRefrigerated) continue;
+
+            let containerNo = item["Container No."] || "";
+            if (!containerNo) continue;
+
+            let days = parseFloat(item["TRSHP Days"]) || 0;
+
+            let matchedCol = null;
+            for (let col of columns) {
+                try {
+                    if (col.check(item)) {
+                        matchedCol = col;
+                        break;
+                    }
+                } catch(e) {}
+            }
+            if (!matchedCol) matchedCol = columns.find(c => c.key === '20_GP') || columns[0];
+
+            containerSet.add(containerNo + "|" + matchedCol.key);
+
+            if (days > 0) {
+                details[matchedCol.key].push({
+                    "Container No.": containerNo,
+                    "Line ID": item["Line ID"] || "",
+                    "Size": item["Size"] || "",
+                    "Type": item["Type"] || "",
+                    "Is Refrigerated": "true",
+                    "Category": "POWER-TRSHP",
+                    "Start": item["TRSHP Start"] || "",
+                    "End": item["TRSHP End"] || "",
+                    "Days": days,
+                    "Free": item["TRSHP Free"] || 0,
+                    "Net": days,
+                    "Vessel Name": item["Vessel Name"] || ""
+                });
+                totals[matchedCol.key] += days;
+            }
+        }
+
+        let countContainers = {};
+        columns.forEach(col => { countContainers[col.key] = 0; });
+        containerSet.forEach(key => {
+            let parts = key.split("|");
+            let colKey = parts[1];
+            if (countContainers[colKey] !== undefined) {
+                countContainers[colKey] += 1;
+            }
+        });
+
+        return { totals, countContainers, details };
+    }
+
+    let tab5RFAgg = calculateTab5RFWithDetails(dataSources.tab5);
+
+    // ===== 6. معلومات السفينة =====
+    let vesselInfo = { carrierName: "—", shippingDate: "—", lineId: "—" };
+
+    for (let [id, container] of containersMap.entries()) {
+        let sourceData = null;
+        if (container.exprtList && container.exprtList.length > 0) sourceData = container.exprtList[0];
+        else if (container.exprt) sourceData = container.exprt;
+        else if (container.trshpList && container.trshpList.length > 0) sourceData = container.trshpList[0];
+        else if (container.trshp) sourceData = container.trshp;
+        else if (container.strge) sourceData = container.strge;
+        else if (container.imprt) sourceData = container.imprt;
+
+        if (sourceData) {
+            if (vesselInfo.carrierName === "—") {
+                vesselInfo.carrierName = sourceData["O/B Carrier Name"] || sourceData["I/B Carrier Name"] || "—";
+            }
+            let atd = sourceData["O/B Carrier ATD"] || sourceData["O/B Carrier ATA"] || sourceData["I/B Carrier ATD"] || "";
+            if (atd && atd !== "" && vesselInfo.shippingDate === "—") {
+                vesselInfo.shippingDate = atd;
+            }
+            let lineId = sourceData["Line ID"];
+            if (lineId && lineId !== "" && vesselInfo.lineId === "—") {
+                vesselInfo.lineId = lineId;
+            }
+        }
+        if (vesselInfo.carrierName !== "—" && vesselInfo.shippingDate !== "—" && vesselInfo.lineId !== "—") break;
+    }
+
+    let shippingDateDisplay = vesselInfo.shippingDate;
+    if (shippingDateDisplay && shippingDateDisplay !== "—") {
+        let converted = convertDate(shippingDateDisplay);
+        if (converted) shippingDateDisplay = converted;
+    }
+
+    let currentDate = new Date().toLocaleString('ar-EG', {
+        year: 'numeric', month: 'numeric', day: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+    });
+
+    // ===== 7. تجهيز بيانات الصفوف =====
+    let reportRows = [
+        { id: 'row1', label: "📤 Full Export Storage Days", category: "EXPRT", data: exprNormalAgg, cssClass: "category-row" },
+        { id: 'row2', label: "⚡ Full Export Power Days", category: "POWER", data: powerExportAgg, cssClass: "power-row" },
+        { id: 'row3', label: "📊 Full Export Count Normal", category: "EXPRT", data: exprNormalAgg, isCount: true, cssClass: "count-row" },
+        { id: 'row4', label: "⭐ Full Re_Export Storage Days", category: "EXPRT", data: exprSpecialAgg, cssClass: "special-row" },
+        { id: 'row5', label: "⚡ Full Re_Export Power Days ⭐", category: "POWER", data: powerExportSpecialAgg, cssClass: "power-special-row" },
+        { id: 'row6', label: "📊 Full Re_Export Count", category: "EXPRT", data: exprSpecialAgg, isCount: true, cssClass: "count-row" },
+        { id: 'row7', label: "🚛 Empty Transit Storage(L.Full)", category: "TRSHP", data: trshpTab1Agg, cssClass: "trshp-row" },
+        { id: 'row8', label: "📦 Empty Export Storage(L.Full)", category: "STRGE", data: strge26Agg, cssClass: "strge-row" },
+        { id: 'row9', label: "📦 Empty Export Storage(L.Empty)", category: "STRGE", data: strgeTab4Agg, cssClass: "strge-tab4-row" },
+        { id: 'row10', label: "📊 Empty Export Count", category: "STRGE", data: strgeTab4Agg, isCount: true, cssClass: "count-row" },
+        { id: 'row11', label: "🚛 Transit Only Storage Days", category: "TRSHP", data: tab5Agg, cssClass: "tab5-row" },
+        { id: 'row12', label: "❄️ Transit Only Power Days", category: "POWER-TRSHP", data: tab5RFAgg, cssClass: "rf-tab5-row" },
+        { id: 'row13', label: "📊 Transit Only Count", category: "TRSHP", data: tab5Agg, isCount: true, cssClass: "count-row" },
+        { id: 'row14', label: "📥 FORWARD Storage Days", category: "Net", data: tab7Agg, cssClass: "tab7-row" },
+        { id: 'row15', label: "📊 FORWARD Storage Count", category: "Net", data: tab7Agg, isCount: true, cssClass: "count-row" }
+    ];
+
+    // تخزين البيانات عالمياً
+    window.interactiveReportRows = reportRows;
+    window.interactiveReportColumns = columns;
+
+    // ===== 8. بناء HTML =====
+    function renderDaysCell(rowId, colKey, total) {
+        if (total === 0) return `<td class="empty-cell">—</td>`;
+        return `<td class="num-days clickable" onclick="openRowDetails('${rowId}', '${colKey}')" style="cursor:pointer;">${total} Day</td>`;
+    }
+
+    function renderCountCell(rowId, colKey, count) {
+        if (count === 0) return `<td class="empty-cell" style="font-size:10px;color:#999;">0</td>`;
+        return `<td class="num-containers clickable" onclick="openRowDetails('${rowId}', '${colKey}')" style="cursor:pointer; font-size:10px;color:#0a3d62;">Cont: ${count}</td>`;
+    }
+
+    let tableRows = '';
+    reportRows.forEach(row => {
+        let data = row.data;
+        tableRows += `<tr class="${row.cssClass} clickable-row" data-row-id="${row.id}">`;
+        tableRows += `<td style="padding-right:10px; font-weight:bold; cursor:pointer;" onclick="openRowDetails('${row.id}', null)">${row.label}</td>`;
+
+        if (row.isCount) {
+            tableRows += columns.map(col => renderCountCell(row.id, col.key, data.countContainers[col.key] || 0)).join('');
+        } else {
+            tableRows += columns.map(col => renderDaysCell(row.id, col.key, data.totals[col.key] || 0)).join('');
+        }
+        tableRows += `</tr>`;
+    });
+
+    let html = `
+        <!DOCTYPE html>
+        <html dir="rtl">
+        <head>
+            <meta charset="UTF-8">
+            <title>تقرير مجمع تفاعلي - أيام التخزين</title>
+            <style>
+                * { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; box-sizing: border-box; }
+                body { background: #f0f2f5; padding: 20px; direction: rtl; }
+                .report-container { max-width: 100%; margin: auto; background: white; border-radius: 16px; box-shadow: 0 8px 20px rgba(0,0,0,0.1); padding: 25px; overflow-x: auto; }
+                .report-header { text-align: center; padding-bottom: 15px; border-bottom: 2px solid #0a3d62; margin-bottom: 20px; }
+                .report-header h1 { color: #0a3d62; font-size: 24px; margin: 0; }
+                .vessel-info { display: flex; justify-content: center; gap: 30px; margin-top: 10px; font-size: 14px; color: #0a3d62; background: #f0f8ff; padding: 8px 20px; border-radius: 8px; border: 1px solid #cce5ff; flex-wrap: wrap; }
+                .vessel-info span { font-weight: bold; }
+                .hint { background: #fff3cd; padding: 8px 15px; border-radius: 8px; margin-bottom: 15px; font-size: 12px; color: #856404; text-align: center; }
+                table { width: 100%; border-collapse: collapse; font-size: 10px; border: 2px solid #0a3d62; }
+                th, td { border: 1px solid #dee2e6; padding: 4px 3px; text-align: center; vertical-align: middle; }
+                .col-sub-header { background: #1a5a7a; color: white; font-size: 9px; }
+                .col-sub-header-small { background: #2a7a9a; color: white; font-size: 8px; }
+                .category-row { background: #d1ecf1; }
+                .special-row { background: #fce4ec; }
+                .trshp-row { background: #d4edda; }
+                .strge-row { background: #cce5ff; }
+                .strge-tab4-row { background: #fff3cd; }
+                .count-row { background: #f8f9fa; }
+                .tab5-row { background: #d5f5e3; }
+                .tab7-row { background: #fadbd8; }
+                .tab8-row { background: #e8daef; }
+                .power-row { background: #e3f2fd; }
+                .power-special-row { background: #fce4ec; }
+                .rf-tab5-row { background: #d5f5e3; }
+                .num-days { color: #1e6f5c; font-weight: bold; }
+                .num-containers { color: #0a3d62; font-weight: bold; }
+                .empty-cell { color: #adb5bd; font-style: italic; }
+                .clickable:hover { background: #ffd54f !important; transition: 0.2s; }
+                .clickable-row:hover { background: #fff9c4 !important; }
+                .footer { margin-top: 20px; text-align: center; font-size: 12px; color: #6c757d; padding-top: 15px; border-top: 1px solid #dee2e6; }
+                .print-btn, .close-btn { position: fixed; top: 20px; padding: 10px 24px; color: white; border: none; border-radius: 30px; font-weight: bold; cursor: pointer; z-index: 1000; }
+                .print-btn { right: 20px; background: #0a3d62; }
+                .close-btn { right: 160px; background: #dc3545; }
+                @media print { body { background: white; padding: 10px; } .print-btn, .close-btn { display: none; } }
+            </style>
+        </head>
+        <body>
+            <div class="report-container">
+                <div class="report-header">
+                    <h1>📊 تقرير مجمع تفاعلي - أيام التخزين</h1>
+                    <div class="vessel-info">
+                        <div>🚢 <span>السفينة:</span> ${vesselInfo.carrierName}</div>
+                        <div>📅 <span>تاريخ الرحلة:</span> ${shippingDateDisplay}</div>
+                        <div>🏷️ <span>الخط:</span> ${vesselInfo.lineId}</div>
+                        <div>📅 <span>تاريخ التقرير:</span> ${currentDate}</div>
+                    </div>
+                </div>
+                <div class="hint">💡 اضغط على أي خلية أو صف لعرض تفاصيل الحاويات</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th rowspan="3" style="background:#0a3d62; color:white; width:200px; vertical-align:middle;">الفئة</th>
+                            <th colspan="${columns.length}" style="background:#0a3d62; color:white; font-size:12px;">أنواع ومقاسات الحاويات</th>
+                        </tr>
+                        <tr>
+                            ${columns.map(col => `<th colspan="1" class="col-sub-header">${col.label}</th>`).join('')}
+                        </tr>
+                        <tr>
+                            ${columns.map(col => `<th class="col-sub-header-small">أيام</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>${tableRows}</tbody>
+                </table>
+                <div class="footer">تم إنشاؤه بواسطة نظام التخزين - تقرير مجمع تفاعلي</div>
+            </div>
+
+            <script>
+                // البيانات متاحة عبر window.opener
+                function openRowDetails(rowId, colKey) {
+                    let rows = window.opener.interactiveReportRows;
+                    let columns = window.opener.interactiveReportColumns;
+                    let row = rows.find(r => r.id === rowId);
+                    if (!row) return;
+                    
+                    let details = row.data.details || {};
+                    let containers = [];
+                    
+                    if (colKey) {
+                        // حاويات العمود المحدد فقط
+                        if (details[colKey]) {
+                            containers = details[colKey];
+                        }
+                    } else {
+                        // كل الحاويات في كل الأعمدة
+                        for (let ck in details) {
+                            containers = containers.concat(details[ck].map(c => Object.assign({}, c, { "_colKey": ck })));
+                        }
+                    }
+                    
+                    if (containers.length === 0) {
+                        alert("لا توجد حاويات مساهمة في هذه الخلية.");
+                        return;
+                    }
+                    
+                    // فتح نافذة مستقلة للتفاصيل
+                    let detailWin = window.open('', '_blank', 'width=1400,height=800,scrollbars=yes');
+                    if (!detailWin) {
+                        alert("الرجاء السماح للنوافذ المنبثقة.");
+                        return;
+                    }
+                    
+                    let colLabel = colKey ? (columns.find(c => c.key === colKey) || {}).label || colKey : "الكل";
+                    
+                    let rowsHtml = containers.map((c, i) => \`
+                        <tr>
+                            <td>\${i + 1}</td>
+                            <td style="font-weight:bold;">\${c["Container No."] || "—"}</td>
+                            <td>\${c["Line ID"] || "—"}</td>
+                            <td>\${c["Size"] || "—"}</td>
+                            <td>\${c["Type"] || "—"}</td>
+                            <td>\${c["Category"] || "—"}</td>
+                            <td>\${c["Dray Status"] || "—"}</td>
+                            <td>\${c["Flex String 01"] || "—"}</td>
+                            <td>\${c["Is Refrigerated"] === "true" ? "❄️" : "—"}</td>
+                            <td>\${c["Is OOG"] === "true" ? "📐" : "—"}</td>
+                            <td>\${c["Is Hazardous"] === "true" ? "⚠️" : "—"}</td>
+                            <td>\${c["IMDG Class"] || "—"}</td>
+                            <td>\${c["Start"] || "—"}</td>
+                            <td>\${c["End"] || "—"}</td>
+                            <td style="background:#e3f2fd;">\${c["Days"] || 0}</td>
+                            <td style="background:#fff3cd;">\${c["Free"] || 0}</td>
+                            <td style="background:#d4edda; font-weight:bold;">\${c["Net"] || 0}</td>
+                            <td>\${c["Vessel Name"] || "—"}</td>
+                        </tr>
+                    \`).join('');
+                    
+                    let detailHtml = \`
+                        <!DOCTYPE html>
+                        <html dir="rtl">
+                        <head>
+                            <meta charset="UTF-8">
+                            <title>تفاصيل: \${row.label}</title>
+                            <style>
+                                * { font-family: 'Segoe UI', Tahoma, sans-serif; box-sizing: border-box; }
+                                body { background: #f0f2f5; padding: 20px; direction: rtl; margin: 0; }
+                                .container { max-width: 100%; margin: auto; background: white; border-radius: 16px; box-shadow: 0 8px 20px rgba(0,0,0,0.1); padding: 25px; }
+                                .header { text-align: center; padding-bottom: 15px; border-bottom: 2px solid #0a3d62; margin-bottom: 20px; }
+                                .header h1 { color: #0a3d62; font-size: 22px; margin: 0; }
+                                .header .sub { color: #666; font-size: 14px; margin-top: 8px; }
+                                .info-badge { display: inline-block; background: #e3f2fd; color: #0d47a1; padding: 6px 15px; border-radius: 20px; margin: 5px; font-size: 13px; font-weight: bold; }
+                                table { width: 100%; border-collapse: collapse; font-size: 11px; }
+                                th { background: #0a3d62; color: white; padding: 8px 4px; position: sticky; top: 0; }
+                                td { padding: 6px 4px; border-bottom: 1px solid #e9ecef; text-align: center; }
+                                tr:hover { background: #f1f3f5; }
+                                tr:nth-child(even) { background: #fafbfc; }
+                                .print-btn { position: fixed; top: 20px; right: 20px; padding: 10px 24px; background: #0a3d62; color: white; border: none; border-radius: 30px; font-weight: bold; cursor: pointer; }
+                                .close-btn { position: fixed; top: 20px; right: 160px; padding: 10px 24px; background: #dc3545; color: white; border: none; border-radius: 30px; font-weight: bold; cursor: pointer; }
+                                @media print { .print-btn, .close-btn { display: none; } body { background: white; } }
+                            </style>
+                        </head>
+                        <body>
+                            <button class="print-btn" onclick="window.print()">🖨️ طباعة</button>
+                            <button class="close-btn" onclick="window.close()">✖ إغلاق</button>
+                            <div class="container">
+                                <div class="header">
+                                    <h1>📋 تفاصيل الحاويات</h1>
+                                    <div class="sub">\${row.label}</div>
+                                    <div style="margin-top:10px;">
+                                        <span class="info-badge">العمود: \${colLabel}</span>
+                                        <span class="info-badge">عدد الحاويات: \${containers.length}</span>
+                                        <span class="info-badge">إجمالي الأيام: \${containers.reduce((s, c) => s + (parseFloat(c["Net"]) || 0), 0)}</span>
+                                    </div>
+                                </div>
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Container No.</th>
+                                            <th>Line</th>
+                                            <th>Size</th>
+                                            <th>Type</th>
+                                            <th>Category</th>
+                                            <th>Dray Status</th>
+                                            <th>Flex 01</th>
+                                            <th>RF</th>
+                                            <th>OOG</th>
+                                            <th>Hazard</th>
+                                            <th>IMDG</th>
+                                            <th>Start</th>
+                                            <th>End</th>
+                                            <th>Days</th>
+                                            <th>Free</th>
+                                            <th>Net</th>
+                                            <th>Vessel</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>\${rowsHtml}</tbody>
+                                </table>
+                            </div>
+                        </body>
+                        </html>
+                    \`;
+                    
+                    detailWin.document.write(detailHtml);
+                    detailWin.document.close();
+                }
+            <\/script>
+        </body>
+        </html>
+    `;
+
+    let reportWindow = window.open('', '_blank', 'width=1600,height=900,scrollbars=yes');
+    if (!reportWindow) {
+        alert("الرجاء السماح للنوافذ المنبثقة لعرض التقرير");
+        return;
+    }
+    reportWindow.document.write(html);
+    reportWindow.document.close();
+    console.log("✅ تم إنشاء التقرير المجمع التفاعلي بنجاح");
+}
+
+// ربط الزر
+document.addEventListener("DOMContentLoaded", function() {
+    let btn = document.getElementById("interactiveReportBtn");
+    if (btn) {
+        btn.addEventListener("click", generateInteractiveConsolidatedReport);
+        console.log("✅ تم ربط زر التقرير المجمع التفاعلي");
+    }
+});
