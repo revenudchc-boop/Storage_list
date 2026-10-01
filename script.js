@@ -10223,7 +10223,7 @@ function compareWithBillingFile(containers, billingData) {
     
     for (let cno in containerMap) {
         let c = containerMap[cno];
-        let programValue = c["Is Reefer"] ? c["Days"] : c["Net"];
+        let programValue = c["Net"];
         
         if (programValue === 0) continue;
         
