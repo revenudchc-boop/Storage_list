@@ -10074,7 +10074,7 @@ function generateInteractiveConsolidatedReport() {
                                 let wb = detailWin.XLSX.read(data, { type: 'array' });
                                 let sheet = wb.Sheets[wb.SheetNames[0]];
                                 let fileRows = detailWin.XLSX.utils.sheet_to_json(sheet, { defval: '', range: 4 });
-                                billingData = window.opener.buildBillingMap(fileRows, 'STORAGE');
+                                billingData = window.opener.buildBillingMap(fileRows, '');  // ← يقرأ STORAGE + REEFER
                                 
                                 let fi = detailWin.document.getElementById('fileInfo');
                                 fi.style.display = 'inline-block';
@@ -10160,16 +10160,23 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 });
 
+
 // ============================================================
 // 🔧 دالة مستقلة: بناء خريطة الفواتير
 // ============================================================
 function buildBillingMap(rows, eventTypeFilter) {
-    eventTypeFilter = eventTypeFilter || "STORAGE";
+    // إذا لم يُحدد فلتر، نقبل كل من STORAGE و REEFER
+    let acceptedTypes = ["STORAGE", "REEFER"];
+    if (eventTypeFilter && eventTypeFilter !== "") {
+        acceptedTypes = [eventTypeFilter.toUpperCase()];
+    }
+    
     let billingMap = {};
+    let typeCounts = {};
     
     for (let row of rows) {
         let eventType = (row["Event Type ID"] || "").toString().trim().toUpperCase();
-        if (eventType !== eventTypeFilter.toUpperCase()) continue;
+        if (!acceptedTypes.includes(eventType)) continue;
         
         let entityId = (row["Event Entity ID"] || "").toString().trim();
         if (!entityId) continue;
@@ -10182,9 +10189,14 @@ function buildBillingMap(rows, eventTypeFilter) {
         } else {
             billingMap[entityId] += qty;
         }
+        
+        // احصائيات
+        typeCounts[eventType] = (typeCounts[eventType] || 0) + 1;
     }
     
-    console.log("✅ تم بناء خريطة الفواتير:", Object.keys(billingMap).length, "حاوية");
+    console.log("✅ خريطة الفواتير:", Object.keys(billingMap).length, "حاوية");
+    console.log("📊 عدد الصفوف حسب النوع:", typeCounts);
+    
     return billingMap;
 }
 
