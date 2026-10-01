@@ -10203,6 +10203,9 @@ function buildBillingMap(rows, eventTypeFilter) {
 // ============================================================
 // 🔍 دالة مستقلة: المقارنة
 // ============================================================
+// ============================================================
+// 🔍 دالة مستقلة: المقارنة
+// ============================================================
 function compareWithBillingFile(containers, billingData) {
     let containerMap = {};
     
@@ -10233,16 +10236,16 @@ function compareWithBillingFile(containers, billingData) {
     let results = [];
     let matchCount = 0, diffCount = 0, missingInBilling = 0;
     
+    // ===== 1. الحاويات من التقرير =====
     for (let cno in containerMap) {
         let c = containerMap[cno];
         let programValue = c["Net"];
+        let inBilling = billingData[cno] !== undefined;
         
-        if (programValue === 0) continue;
+        // استبعاد فقط إذا: أيام البرنامج = 0 وليس في الملف
+        if (programValue === 0 && !inBilling) continue;
         
-        let billingValue = billingData[cno];
-        let inBilling = billingValue !== undefined;
-        if (!inBilling) billingValue = 0;
-        
+        let billingValue = inBilling ? billingData[cno] : 0;
         let diff = programValue - billingValue;
         
         if (!inBilling) missingInBilling++;
@@ -10259,6 +10262,27 @@ function compareWithBillingFile(containers, billingData) {
             "Billing Days": billingValue,
             "Difference": diff,
             "Status": !inBilling ? "غير موجود في الملف" : (diff === 0 ? "متطابق" : "مختلف")
+        });
+    }
+    
+    // ===== 2. الحاويات الموجودة في الملف فقط (غير موجودة في البرنامج) =====
+    for (let cno in billingData) {
+        if (containerMap[cno]) continue; // تمت معالجتها في الحلقة الأولى
+        
+        let billingValue = billingData[cno];
+        if (billingValue === 0) continue;
+        
+        diffCount++;
+        results.push({
+            "Container No.": cno,
+            "Line ID": "—",
+            "Size": "—",
+            "Type": "—",
+            "Is Reefer": false,
+            "Program Days": 0,
+            "Billing Days": billingValue,
+            "Difference": -billingValue,
+            "Status": "غير موجود في البرنامج"
         });
     }
     
