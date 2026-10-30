@@ -1,149 +1,198 @@
 // ============================================================
 // 🔐 نظام الصلاحيات والمصادقة
+// - عند توفر الخادم المحلي: الدخول والصلاحيات يتحققان في الخادم (الأصل الموثوق)
+// - بدون الخادم (GitHub فقط): تحقق محلي بكلمات مرور مشفّرة PBKDF2
 // ============================================================
 
-const USERS_URL = 'https://raw.githubusercontent.com/markingdchc/marking.dchc/main/users.json';
-const CURRENT_USER_KEY = 'currentUser';
+const USERS_URL = (window.APP_CONFIG && window.APP_CONFIG.USERS_URL) ||
+    'https://raw.githubusercontent.com/markingdchc/marking.dchc/main/users.json';
+const SESSION_KEY = 'session';
 const LOGIN_ATTEMPTS_KEY = 'loginAttempts';
 const MAX_ATTEMPTS = 5;
-const LOCK_DURATION_MS = 15 * 60 * 1000; // 15 دقيقة
+const LOCK_DURATION_MS = 15 * 60 * 1000;
+const SESSION_HOURS = 8;
 
-// ========== متغيرات عامة ==========
 let currentUser = null;
-let cachedUsers = null;
+let cachedUsers = null;     // في الذاكرة فقط — لا تُحفظ كلمات المرور في المتصفح
+let _sessionExpiredHandled = false;
 
 // ============================================================
-// 🔒 دوال التشفير
+// 🧹 مساعدات
 // ============================================================
-async function sha256(text) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(text);
-    const hash = await crypto.subtle.digest('SHA-256', data);
-    return Array.from(new Uint8Array(hash))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
+function escapeHtml(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
 }
 
-async function verifyPassword(inputPassword, storedPassword) {
-    // إذا كان مخزناً بدون تشفير (نص عادي) - للمرحلة الأولى
-    if (!storedPassword.startsWith('sha256:')) {
-        return inputPassword === storedPassword;
+// ============================================================
+// 💾 الجلسة: sessionStorage افتراضياً، و localStorage عند "تذكرني"، مع انتهاء صلاحية
+// ============================================================
+function readSession() {
+    try {
+        const raw = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY);
+        if (!raw) return null;
+        const s = JSON.parse(raw);
+        if (!s || !s.user || !s.exp || s.exp < Date.now()) { clearSession(); return null; }
+        return s;
+    } catch (e) { return null; }
+}
+
+function saveSession(session, remember) {
+    clearSession();
+    (remember ? localStorage : sessionStorage).setItem(SESSION_KEY, JSON.stringify(session));
+}
+
+function clearSession() {
+    sessionStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(SESSION_KEY);
+}
+
+function getAuthToken() {
+    const s = readSession();
+    return s && s.token ? s.token : null;
+}
+
+// ============================================================
+// 🔒 التشفير (للوضع بدون خادم)
+// ============================================================
+function _requireSubtle() {
+    if (!window.crypto || !crypto.subtle) {
+        throw new Error('التشفير غير متاح في هذا الاتصال. افتح التطبيق عبر HTTPS أو من الخادم المحلي.');
     }
-    // إذا كان مشفراً
-    const cleanHash = storedPassword.replace('sha256:', '');
-    const inputHash = await sha256(inputPassword);
-    return inputHash === cleanHash;
+}
+
+async function sha256(text) {
+    _requireSubtle();
+    const data = new TextEncoder().encode(text);
+    const hash = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function pbkdf2Hex(password, salt, iterations) {
+    _requireSubtle();
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits(
+        { name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode(salt), iterations }, key, 256);
+    return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// الصيغة: pbkdf2$<iterations>$<salt>$<hash>  (تُولَّد بـ node tools/hash-password.js)
+async function verifyPassword(inputPassword, storedPassword) {
+    if (typeof storedPassword !== 'string') return false;
+    if (storedPassword.startsWith('pbkdf2$')) {
+        const [, iterStr, salt, hash] = storedPassword.split('$');
+        const iter = parseInt(iterStr, 10);
+        if (!(iter >= 10000 && iter <= 2000000) || !salt || !hash) return false;
+        const input = await pbkdf2Hex(inputPassword, salt, iter);
+        let diff = input.length ^ hash.length;                     // مقارنة بزمن ثابت
+        for (let i = 0; i < input.length && i < hash.length; i++) diff |= input.charCodeAt(i) ^ hash.charCodeAt(i);
+        return diff === 0;
+    }
+    if (storedPassword.startsWith('sha256:')) {                    // قديمة — مدعومة مؤقتاً
+        return (await sha256(inputPassword)) === storedPassword.slice(7);
+    }
+    console.error('❌ كلمة مرور غير مشفّرة في users.json — شغّل tools/migrate-users.js');
+    return false;                                                   // النص العادي مرفوض
 }
 
 // ============================================================
-// 📥 تحميل المستخدمين من GitHub
+// 📥 تحميل المستخدمين من GitHub (وضع بدون خادم فقط)
 // ============================================================
 async function loadUsers(forceRefresh = false) {
-    if (cachedUsers && !forceRefresh) {
-        return cachedUsers;
-    }
-    
-    try {
-        const response = await fetch(USERS_URL + '?t=' + Date.now());
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        
-        const data = await response.json();
-        cachedUsers = data.users || [];
-        console.log('✅ تم تحميل المستخدمين:', cachedUsers.length);
-        return cachedUsers;
-    } catch (error) {
-        console.error('❌ فشل تحميل users.json:', error);
-        // محاولة استخدام نسخة محفوظة محلياً
-        const localUsers = localStorage.getItem('cached_users');
-        if (localUsers) {
-            console.log('📦 استخدام نسخة محلية');
-            cachedUsers = JSON.parse(localUsers);
-            return cachedUsers;
-        }
-        throw new Error('تعذّر تحميل بيانات المستخدمين');
-    }
+    if (cachedUsers && !forceRefresh) return cachedUsers;
+    const response = await fetch(USERS_URL + '?t=' + Date.now());
+    if (!response.ok) throw new Error('تعذّر تحميل بيانات المستخدمين (HTTP ' + response.status + ')');
+    const data = await response.json();
+    cachedUsers = data.users || [];
+    return cachedUsers;
 }
 
 // ============================================================
 // 🚪 تسجيل الدخول
 // ============================================================
 async function login(username, password, rememberMe = false) {
-    // 1. تحقق من الحظر
+    username = (username || '').trim();
+    if (!username || !password) throw new Error('أدخل اسم المستخدم وكلمة المرور');
+
+    if (typeof detectLocalServer === 'function') await detectLocalServer();
+    const useServer = typeof _localServerAvailable !== 'undefined' && _localServerAvailable;
+
+    const session = useServer
+        ? await loginViaServer(username, password)
+        : await loginViaGitHub(username, password);
+
+    saveSession(session, rememberMe);
+    currentUser = session.user;
+    logActivity('login', `تسجيل دخول: ${session.user.fullName}`);
+    return session.user;
+}
+
+async function loginViaServer(username, password) {
+    let result;
+    try {
+        result = await serverLogin(username, password);
+    } catch (e) {
+        throw new Error('تعذّر الاتصال بالخادم المحلي');
+    }
+    if (!result.ok || !result.data.token) {
+        throw new Error(result.data.error || '❌ اسم المستخدم أو كلمة المرور غير صحيحة');
+    }
+    return { user: result.data.user, token: result.data.token, exp: result.data.expiresAt };
+}
+
+async function loginViaGitHub(username, password) {
     if (isLocked(username)) {
-        const remaining = getRemainingLockTime(username);
-        throw new Error(`🔒 الحساب محظور. حاول بعد ${remaining} دقيقة`);
+        throw new Error(`🔒 الحساب محظور. حاول بعد ${getRemainingLockTime(username)} دقيقة`);
     }
-    
-    // 2. تحميل المستخدمين
     const users = await loadUsers(true);
-    
-    // 3. البحث عن المستخدم
-    const user = users.find(u => 
-        u.username.toLowerCase() === username.toLowerCase().trim()
-    );
-    
-    if (!user) {
+    const user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
+    const valid = user ? await verifyPassword(password, user.password) : false;
+
+    if (!user || !valid) {
         recordFailedAttempt(username);
         throw new Error('❌ اسم المستخدم أو كلمة المرور غير صحيحة');
     }
-    
-    // 4. التحقق من الحالة
-    if (user.status !== 'active') {
-        throw new Error('🚫 الحساب معطّل، تواصل مع المدير');
-    }
-    
-    // 5. التحقق من كلمة المرور
-    const isValid = await verifyPassword(password, user.password);
-    if (!isValid) {
-        recordFailedAttempt(username);
-        throw new Error('❌ اسم المستخدم أو كلمة المرور غير صحيحة');
-    }
-    
-    // 6. نجاح → حفظ المستخدم
+    if (user.status !== 'active') throw new Error('🚫 الحساب معطّل، تواصل مع المدير');
+
     clearAttempts(username);
-    
-    const sessionUser = {
-        id: user.id,
-        username: user.username,
-        fullName: user.fullName,
-        role: user.role,
-        lineIds: user.lineIds,
-        status: user.status,
-        loginTime: Date.now()
+    return {
+        user: { id: user.id, username: user.username, fullName: user.fullName, role: user.role, lineIds: user.lineIds || [], status: user.status },
+        token: null,
+        exp: Date.now() + SESSION_HOURS * 3600 * 1000
     };
-    
-    localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(sessionUser));
-    localStorage.setItem('cached_users', JSON.stringify(users));
-    currentUser = sessionUser;
-    
-    console.log('✅ تسجيل دخول ناجح:', user.username);
-    logActivity('login', `تسجيل دخول: ${user.fullName}`);
-    
-    return sessionUser;
 }
 
 // ============================================================
 // 🚪 تسجيل الخروج
 // ============================================================
-function logout() {
-    if (currentUser) {
-        logActivity('logout', `تسجيل خروج: ${currentUser.fullName}`);
-    }
-    localStorage.removeItem(CURRENT_USER_KEY);
+async function logout() {
+    if (currentUser) logActivity('logout', `تسجيل خروج: ${currentUser.fullName}`);
+    try {
+        if (getAuthToken() && typeof serverLogout === 'function') await serverLogout();
+    } catch (e) { /* لا يهم */ }
+    clearSession();
     currentUser = null;
     window.location.reload();
 }
 
+window.addEventListener('session-expired', () => {
+    if (_sessionExpiredHandled || !isLoggedIn()) return;
+    _sessionExpiredHandled = true;
+    alert('⏱️ انتهت الجلسة، سجّل الدخول من جديد');
+    clearSession();
+    currentUser = null;
+    window.location.reload();
+});
+
 // ============================================================
-// 🔒 إدارة محاولات الدخول
+// 🔒 محاولات الدخول (وضع بدون خادم فقط — في الخادم تُدار في الخادم نفسه)
 // ============================================================
 function getAttempts() {
-    return JSON.parse(localStorage.getItem(LOGIN_ATTEMPTS_KEY) || '{}');
+    try { return JSON.parse(localStorage.getItem(LOGIN_ATTEMPTS_KEY) || '{}'); } catch (e) { return {}; }
 }
-
-function saveAttempts(attempts) {
-    localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify(attempts));
-}
+function saveAttempts(attempts) { localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify(attempts)); }
 
 function recordFailedAttempt(username) {
     const attempts = getAttempts();
@@ -152,103 +201,64 @@ function recordFailedAttempt(username) {
     attempts[key].count++;
     attempts[key].lastAttempt = Date.now();
     saveAttempts(attempts);
-    console.log(`⚠️ محاولة فاشلة (${attempts[key].count}/${MAX_ATTEMPTS}) لـ ${username}`);
 }
-
 function clearAttempts(username) {
     const attempts = getAttempts();
     delete attempts[username.toLowerCase()];
     saveAttempts(attempts);
 }
-
 function isLocked(username) {
-    const attempts = getAttempts();
-    const entry = attempts[username.toLowerCase()];
+    const entry = getAttempts()[username.toLowerCase()];
     if (!entry || entry.count < MAX_ATTEMPTS) return false;
-    const elapsed = Date.now() - entry.lastAttempt;
-    if (elapsed >= LOCK_DURATION_MS) {
-        clearAttempts(username);
-        return false;
-    }
+    if (Date.now() - entry.lastAttempt >= LOCK_DURATION_MS) { clearAttempts(username); return false; }
     return true;
 }
-
 function getRemainingLockTime(username) {
-    const attempts = getAttempts();
-    const entry = attempts[username.toLowerCase()];
+    const entry = getAttempts()[username.toLowerCase()];
     if (!entry) return 0;
-    const elapsed = Date.now() - entry.lastAttempt;
-    return Math.ceil((LOCK_DURATION_MS - elapsed) / 60000);
+    return Math.ceil((LOCK_DURATION_MS - (Date.now() - entry.lastAttempt)) / 60000);
 }
 
 // ============================================================
-// 👤 الحصول على المستخدم الحالي
+// 👤 المستخدم الحالي
 // ============================================================
 function getCurrentUser() {
     if (currentUser) return currentUser;
-    const saved = localStorage.getItem(CURRENT_USER_KEY);
-    if (saved) {
-        currentUser = JSON.parse(saved);
-        return currentUser;
-    }
+    const s = readSession();
+    if (s) { currentUser = s.user; return currentUser; }
     return null;
 }
-
-function isLoggedIn() {
-    return getCurrentUser() !== null;
-}
-
-function isAdmin() {
-    const u = getCurrentUser();
-    return u && u.role === 'admin';
-}
-
-function isViewer() {
-    const u = getCurrentUser();
-    return u && u.role === 'viewer';
-}
+function isLoggedIn() { return getCurrentUser() !== null; }
+function isAdmin() { const u = getCurrentUser(); return !!u && u.role === 'admin'; }
+function isViewer() { const u = getCurrentUser(); return !!u && u.role === 'viewer'; }
 
 // ============================================================
 // 🔍 فلترة البيانات حسب خطوط المستخدم
+// (عرض فقط — الأرشيف على الخادم يُفلتر في الخادم نفسه)
 // ============================================================
 function filterDataByUserLines(data) {
     const user = getCurrentUser();
     if (!user) return [];
-    
-    // Admin أو خطوط = ["*"] → كل البيانات
-    if (user.role === 'admin' || user.lineIds.includes('*')) {
-        return data;
-    }
-    
-    // Viewer → فقط الخطوط المخصصة
-    return data.filter(item => {
-        const lineId = item["Line ID"] || item["الخط"] || "";
-        return user.lineIds.includes(lineId);
-    });
+    if (user.role === 'admin' || (user.lineIds || []).includes('*')) return data;
+    return data.filter(item => canSeeLine(item["Line ID"] || item["الخط"] || ""));
 }
 
 function canSeeLine(lineId) {
     const user = getCurrentUser();
     if (!user) return false;
-    if (user.role === 'admin' || user.lineIds.includes('*')) return true;
-    return user.lineIds.includes(lineId);
+    if (user.role === 'admin' || (user.lineIds || []).includes('*')) return true;
+    return (user.lineIds || []).includes(lineId);
 }
 
 // ============================================================
-// 🎨 تطبيق الصلاحيات على الواجهة
+// 🎨 تطبيق الصلاحيات على الواجهة (تجميلي فقط؛ الأمان الفعلي في الخادم)
 // ============================================================
 function applyPermissions() {
     const user = getCurrentUser();
     if (!user) return;
-    
-    console.log('🎨 تطبيق الصلاحيات للمستخدم:', user.username, '- الدور:', user.role);
-    
-    // عرض معلومات المستخدم في الشريط العلوي
     updateUserBar(user);
-    
+
     if (user.role === 'admin') {
-        // 👑 Admin يرى كل شيء
-        // ✅ إظهار زر التوكن إذا لم يكن محفوظاً
         const tokenBtn = document.getElementById('setTokenBtn');
         if (tokenBtn) {
             const token = localStorage.getItem('github_token');
@@ -256,62 +266,43 @@ function applyPermissions() {
         }
         return;
     }
-    
-    // Viewer: إخفاء كل عناصر الإدارة
+
     const elementsToHide = [
-        '#fileInput', '.file-label',           // رفع الملفات
-        '#addGlobalLineBtn', '#newGlobalLineName', // إدارة الخطوط
-        '#manageUsersBtn',                      // إدارة المستخدمين
-		'#archiveBtn',
-		'#setTokenBtn',                         // زر التوكن
-		'#createArchiveBtn',                    // 🆕 إخفاء زر إنشاء مجلد أرشيف
-        '.settings-btn'                         // أزرار الإعدادات
+        '#fileInput', '.file-label',
+        '#addGlobalLineBtn', '#newGlobalLineName',
+        '#manageUsersBtn', '#archiveBtn', '#setTokenBtn', '#createArchiveBtn',
+        '.settings-btn'
     ];
-    
     elementsToHide.forEach(selector => {
         document.querySelectorAll(selector).forEach(el => {
-            if (el.classList.contains('settings-btn') && el.id === 'selectColumnsBtn1') {
-                return; // إبقاء زر اختيار الأعمدة
-            }
+            if (el.classList.contains('settings-btn') && el.id === 'selectColumnsBtn1') return;
             el.style.display = 'none';
         });
     });
-    
-    // إخفاء أزرار اختيار الأعمدة لكل التبويبات (اختياري)
-    // document.querySelectorAll('[id^="selectColumnsBtn"]').forEach(b => b.style.display = 'none');
-    
-    console.log('✅ تم إخفاء عناصر Admin');
 }
 
 function updateUserBar(user) {
     const bar = document.getElementById('userBar');
     if (!bar) return;
-    
+
     const roleLabel = user.role === 'admin' ? '👑 مدير' : '👁️ مشاهد';
-    const linesLabel = user.lineIds.includes('*') ? 'كل الخطوط' : user.lineIds.join(' • ');
-    
+    const lines = user.lineIds || [];
+    const linesLabel = lines.includes('*') ? 'كل الخطوط' : lines.join(' • ');
+    const pill = 'background:rgba(255,255,255,0.15); padding:6px 14px; border-radius:20px;';
+
+    // كل القيم تُهرَّب لمنع حقن HTML عبر الاسم أو الخطوط
     bar.innerHTML = `
         <div style="display:flex; gap:15px; align-items:center; flex-wrap:wrap;">
-            <div style="background:rgba(255,255,255,0.15); padding:6px 14px; border-radius:20px;">
-                <strong>👤 ${user.fullName}</strong> <span style="opacity:0.8;">(${user.username})</span>
-            </div>
-            <div style="background:rgba(255,255,255,0.15); padding:6px 14px; border-radius:20px;">
-                ${roleLabel}
-            </div>
-            <div style="background:rgba(255,255,255,0.15); padding:6px 14px; border-radius:20px;">
-                🏷️ ${linesLabel}
-            </div>
-            <button onclick="if(confirm('تسجيل الخروج؟')) logout();" 
-                    style="background:#dc3545; color:white; border:none; padding:6px 16px; 
-                           border-radius:20px; cursor:pointer; font-weight:bold;">
-                🚪 خروج
-            </button>
-        </div>
-    `;
+            <div style="${pill}"><strong>👤 ${escapeHtml(user.fullName)}</strong> <span style="opacity:0.8;">(${escapeHtml(user.username)})</span></div>
+            <div style="${pill}">${roleLabel}</div>
+            <div style="${pill}">🏷️ ${escapeHtml(linesLabel)}</div>
+            <button id="logoutBtn" style="background:#dc3545; color:white; border:none; padding:6px 16px; border-radius:20px; cursor:pointer; font-weight:bold;">🚪 خروج</button>
+        </div>`;
+    document.getElementById('logoutBtn').onclick = () => { if (confirm('تسجيل الخروج؟')) logout(); };
 }
 
 // ============================================================
-// 📊 سجل النشاط
+// 📊 سجل النشاط المحلي (سجل التدقيق الحقيقي في الخادم: data/audit.log)
 // ============================================================
 function logActivity(action, details) {
     try {
@@ -319,73 +310,69 @@ function logActivity(action, details) {
         const logs = JSON.parse(localStorage.getItem('activity_log') || '[]');
         logs.unshift({
             timestamp: new Date().toISOString(),
-            userId: user?.id || 0,
-            username: user?.username || 'unknown',
-            fullName: user?.fullName || 'غير معروف',
-            action,
-            details
+            userId: user ? user.id : 0,
+            username: user ? user.username : 'unknown',
+            fullName: user ? user.fullName : 'غير معروف',
+            action, details
         });
-        // الاحتفاظ بآخر 500 سجل فقط
         localStorage.setItem('activity_log', JSON.stringify(logs.slice(0, 500)));
-    } catch(e) {
-        console.warn('فشل تسجيل النشاط:', e);
-    }
+    } catch (e) { /* ignore */ }
 }
-
 function getActivityLog() {
-    return JSON.parse(localStorage.getItem('activity_log') || '[]');
+    try { return JSON.parse(localStorage.getItem('activity_log') || '[]'); } catch (e) { return []; }
 }
 
 // ============================================================
-// 🌐 تهيئة نظام الصلاحيات عند فتح الصفحة
+// 🌐 تهيئة النظام عند فتح الصفحة
 // ============================================================
 async function initAuth() {
     const loginScreen = document.getElementById('loginScreen');
     const appContainer = document.getElementById('appContainer');
-    
-    if (isLoggedIn()) {
-        // المستخدم مسجّل → إخفاء شاشة الدخول + عرض التطبيق
-        if (loginScreen) loginScreen.style.display = 'none';
-        if (appContainer) appContainer.style.display = 'block';
-        
-        // 🔄 تحديث بيانات المستخدم من GitHub
+
+    // تنظيف بيانات قديمة غير آمنة كانت تُحفظ في المتصفح (نسخة المستخدمين بكلمات مرورهم)
+    localStorage.removeItem('cached_users');
+    localStorage.removeItem('currentUser');
+
+    let serverUp = false;
+    if (typeof detectLocalServer === 'function') serverUp = await detectLocalServer();
+
+    let session = readSession();
+
+    // جلسة بلا توكن بينما الخادم متاح → لا يمكنها الوصول للأرشيف، نطلب دخولاً جديداً
+    if (session && !session.token && serverUp) { clearSession(); currentUser = null; session = null; }
+
+    if (session) {
+        currentUser = session.user;
         try {
-            const users = await loadUsers(true);
-            const fresh = users.find(u => u.id === currentUser.id);
-            if (fresh) {
-                currentUser = {
-                    id: fresh.id,
-                    username: fresh.username,
-                    fullName: fresh.fullName,
-                    role: fresh.role,
-                    lineIds: fresh.lineIds,
-                    status: fresh.status,
-                    loginTime: currentUser.loginTime
-                };
-                localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(currentUser));
-                
-                if (fresh.status !== 'active') {
-                    alert('🚫 تم تعطيل حسابك');
-                    logout();
+            if (session.token && serverUp) {
+                const me = await serverMe();                         // الخادم هو المرجع في الدور والخطوط
+                if (me.status === 401) return;                       // حدث session-expired سيعالجها
+                if (me.ok && me.data.user) {
+                    currentUser = me.data.user;
+                    saveSession({ user: currentUser, token: session.token, exp: session.exp },
+                                !!localStorage.getItem(SESSION_KEY));
+                }
+            } else if (!session.token) {
+                const users = await loadUsers(true);
+                const fresh = users.find(u => u.id === currentUser.id);
+                if (!fresh || fresh.status !== 'active') {
+                    alert(fresh ? '🚫 تم تعطيل حسابك' : '⚠️ تم حذف حسابك');
+                    await logout();
                     return;
                 }
-            } else {
-                alert('⚠️ تم حذف حسابك');
-                logout();
-                return;
+                currentUser = { id: fresh.id, username: fresh.username, fullName: fresh.fullName, role: fresh.role, lineIds: fresh.lineIds || [], status: fresh.status };
+                saveSession({ user: currentUser, token: null, exp: session.exp }, !!localStorage.getItem(SESSION_KEY));
             }
-        } catch(e) {
-            console.warn('تعذّر تحديث بيانات المستخدم:', e);
+        } catch (e) {
+            console.warn('تعذّر تحديث بيانات المستخدم:', e.message);
         }
-        
+
+        if (loginScreen) loginScreen.style.display = 'none';
+        if (appContainer) appContainer.style.display = 'block';
         applyPermissions();
-        
-        // ✅ إخفاء زر Admin فقط للمشاهد
         const manageBtn = document.getElementById('manageUsersBtn');
         if (manageBtn && !isAdmin()) manageBtn.style.display = 'none';
-        
     } else {
-        // غير مسجّل → عرض شاشة الدخول
         if (loginScreen) loginScreen.style.display = 'flex';
         if (appContainer) appContainer.style.display = 'none';
         setupLoginForm();
@@ -393,30 +380,28 @@ async function initAuth() {
 }
 
 // ============================================================
-// 📝 ربط نموذج تسجيل الدخول
+// 📝 نموذج تسجيل الدخول
 // ============================================================
 function setupLoginForm() {
     const form = document.getElementById('loginForm');
     if (!form) return;
-    
-    form.onsubmit = async function(e) {
+
+    form.onsubmit = async function (e) {
         e.preventDefault();
         const username = document.getElementById('loginUsername').value;
         const password = document.getElementById('loginPassword').value;
-        const rememberMe = document.getElementById('rememberMe')?.checked || false;
+        const rememberMe = !!(document.getElementById('rememberMe') && document.getElementById('rememberMe').checked);
         const errorDiv = document.getElementById('loginError');
         const btn = document.getElementById('loginBtn');
-        
-        // تعطيل الزر
+
         btn.disabled = true;
         btn.textContent = '⏳ جاري التحقق...';
         errorDiv.style.display = 'none';
-        
+
         try {
             await login(username, password, rememberMe);
-            // نجاح → إعادة تحميل الصفحة
             window.location.reload();
-        } catch(err) {
+        } catch (err) {
             errorDiv.textContent = err.message;
             errorDiv.style.display = 'block';
             btn.disabled = false;
@@ -425,7 +410,4 @@ function setupLoginForm() {
     };
 }
 
-// ============================================================
-// 🚀 تشغيل عند التحميل
-// ============================================================
 document.addEventListener('DOMContentLoaded', initAuth);

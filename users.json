@@ -3,43 +3,51 @@
     {
       "id": 1,
       "username": "admin",
-      "password": "admin123",
+      "password": "pbkdf2$150000$6ca55ca70b72d065131a8de039b47125$1c40fe1055e7ab86dbc4b383c304f48261a4ad834a35431447c5fc6782470e10",
       "fullName": "المدير العام",
       "role": "admin",
-      "lineIds": ["*"],
+      "lineIds": [
+        "*"
+      ],
       "status": "active",
       "createdAt": "2026-10-13"
     },
     {
       "id": 2,
       "username": "msc",
-      "password": "msc#123",
+      "password": "pbkdf2$150000$092ee02e8da2a6f89254501bdb0f8e0f$a9c8c5fe1df4b0dc15fa1b550b3253983fe14245cd8c7155eaa55e3eceb2d7a2",
       "fullName": "Ahmed Abdelrahman",
       "role": "viewer",
-      "lineIds": ["MSC", "WEC"],
+      "lineIds": [
+        "MSC",
+        "WEC"
+      ],
       "status": "active",
       "createdAt": "2026-10-13"
     },
     {
       "id": 3,
       "username": "yml",
-      "password": "yml#123",
+      "password": "pbkdf2$150000$ec821f2369e1c5766cd9768bf0ca8fe3$d954267e4122da92bbd24ea0530e3ebae84208b696dd483b3a347c51773d019a",
       "fullName": "Yang Ming Shipping",
       "role": "viewer",
-      "lineIds": ["YML"],
+      "lineIds": [
+        "YML"
+      ],
       "status": "active",
       "createdAt": "2026-10-13"
     },
     {
       "id": 4,
       "username": "zim",
-      "password": "zim#123",
+      "password": "pbkdf2$150000$ed89873012748f8acf94231230a98d19$5849a21f5165aed9664fa659b21bd5d52285cf5675187f2130567fd7a63db098",
       "fullName": "Egy Mar",
       "role": "viewer",
-      "lineIds": ["ZIM"],
+      "lineIds": [
+        "ZIM"
+      ],
       "status": "active",
       "createdAt": "2026-10-13"
     }
-  ],
-  "loginAttempts": {}
+  ]
 }

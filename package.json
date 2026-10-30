@@ -1,13 +1,17 @@
 {
   "name": "archive-local-server",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "خادم الأرشيف المحلي للشبكة الداخلية",
   "main": "server.js",
+  "private": true,
+  "engines": { "node": ">=18" },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node tests/security.test.js",
+    "migrate-users": "node tools/migrate-users.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5"
+    "express": "^4.21.2",
+    "multer": "^2.0.0"
   }
 }

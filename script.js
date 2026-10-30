@@ -425,17 +425,18 @@ console.log("🧹 تم مسح بطاقات الإجمالي والجداول ا�
                 if (!equipId || equipId === "") continue;
 
 				if (!containersMap.has(equipId)) {
-					containersMap.set(equipId, {
-						equipId: equipId,
-						equipmentType: row["Equipment Type"] || "",
-						lineId: row["Line ID"] || "",
-						notes: row["Notes"] || "",   // ← السطر الجديد
-						trshpList: [],
-						exprtList: [],
-						strge: null,
-						imprt: null,
-						trshpReturn: null
-					});
+containersMap.set(equipId, {
+    equipId: equipId,
+    equipmentType: row["Equipment Type"] || "",
+    lineId: row["Line ID"] || "",
+    notes: row["Notes"] || "",
+    trshpList: [],
+    exprtList: [],
+    strge: null,
+    strgeList: [],
+    imprt: null,
+    trshpReturn: null
+});
 				}
                 let c = containersMap.get(equipId);
                 let cat = row["Category"];
@@ -451,9 +452,11 @@ console.log("🧹 تم مسح بطاقات الإجمالي والجداول ا�
                     if (!c.exprtList) c.exprtList = [];
                     c.exprtList.push(row);
                 }
-                else if (cat === "STRGE") {
-                    c.strge = row;
-                }
+else if (cat === "STRGE") {
+    c.strge = row;
+    if (!c.strgeList) c.strgeList = [];
+    c.strgeList.push(row);
+}
                 else if (cat === "IMPRT") {
                     c.imprt = row;
                 }
@@ -608,17 +611,18 @@ function processExcelFromBytes(bytes, fileName) {
             if (!equipId || equipId === "") continue;
             
             if (!containersMap.has(equipId)) {
-                containersMap.set(equipId, {
-                    equipId: equipId,
-                    equipmentType: row["Equipment Type"] || "",
-                    lineId: row["Line ID"] || "",
-                    notes: row["Notes"] || "",
-                    trshpList: [],
-                    exprtList: [],
-                    strge: null,
-                    imprt: null,
-                    trshpReturn: null
-                });
+containersMap.set(equipId, {
+    equipId: equipId,
+    equipmentType: row["Equipment Type"] || "",
+    lineId: row["Line ID"] || "",
+    notes: row["Notes"] || "",
+    trshpList: [],
+    exprtList: [],
+    strge: null,
+    strgeList: [],
+    imprt: null,
+    trshpReturn: null
+});
             }
             let c = containersMap.get(equipId);
             let cat = row["Category"];
@@ -634,9 +638,11 @@ function processExcelFromBytes(bytes, fileName) {
                 if (!c.exprtList) c.exprtList = [];
                 c.exprtList.push(row);
             }
-            else if (cat === "STRGE") {
-                c.strge = row;
-            }
+else if (cat === "STRGE") {
+    c.strge = row;
+    if (!c.strgeList) c.strgeList = [];
+    c.strgeList.push(row);
+}
             else if (cat === "IMPRT") {
                 c.imprt = row;
             }
@@ -1289,17 +1295,18 @@ function loadLastFileFromStorage() {
             if (!equipId || equipId === "") continue;
             
             if (!containersMap.has(equipId)) {
-                containersMap.set(equipId, {
-                    equipId: equipId,
-                    equipmentType: row["Equipment Type"] || "",
-                    lineId: row["Line ID"] || "",
-                    trshpList: [],
-                    exprtList: [],
-                    strge: null,
-                    imprt: null,
-                    trshpReturn: null,
-                    notes: row["Notes"] || "",
-                });
+containersMap.set(equipId, {
+    equipId: equipId,
+    equipmentType: row["Equipment Type"] || "",
+    lineId: row["Line ID"] || "",
+    notes: row["Notes"] || "",
+    trshpList: [],
+    exprtList: [],
+    strge: null,
+    strgeList: [],
+    imprt: null,
+    trshpReturn: null
+});
             }
             let c = containersMap.get(equipId);
             let cat = row["Category"];
@@ -1315,7 +1322,11 @@ function loadLastFileFromStorage() {
                 if (!c.exprtList) c.exprtList = [];
                 c.exprtList.push(row);
             }
-            else if (cat === "STRGE") c.strge = row;
+            else if (cat === "STRGE") {
+				c.strge = row;
+				if (!c.strgeList) c.strgeList = [];
+				c.strgeList.push(row);
+			}
             else if (cat === "IMPRT") c.imprt = row;
         }
         
@@ -2072,8 +2083,10 @@ function processAndDisplay1() {
         
         if (trshpArray.length === 0 || exprtList.length === 0) continue;
         
-        let hasReturnTrshp = trshpArray.some(tr => (tr["Dray Status"] || "") === "RETURN");
-        if (hasReturnTrshp) continue;
+        // 🆕 استخراج تواريخ EXPRT RETURN (لخصم التداخل وعرضها في النهاية)
+        let exprtReturn = exprtList.find(ex => (ex["Dray Status"] || "").toUpperCase() === "RETURN");
+        let returnStart = exprtReturn ? convertDate(exprtReturn["Rule Start Time"] || "") : "";
+        let returnEnd = exprtReturn ? convertDate(exprtReturn["Rule End Time"] || "") : "";
         
         // ترتيب فترات TRSHP حسب التاريخ
         let sortedTrshp = [...trshpArray].sort((a, b) => 
@@ -2146,32 +2159,31 @@ function processAndDisplay1() {
             }
         }
         
-vesselPeriods.sort((a, b) => 
-    new Date(convertDate(a["Start Time"])) - new Date(convertDate(b["Start Time"]))
-);
-truckPeriods.sort((a, b) => 
-    new Date(convertDate(a["Start Time"])) - new Date(convertDate(b["Start Time"]))
-);
+        vesselPeriods.sort((a, b) => 
+            new Date(convertDate(a["Start Time"])) - new Date(convertDate(b["Start Time"]))
+        );
+        truckPeriods.sort((a, b) => 
+            new Date(convertDate(a["Start Time"])) - new Date(convertDate(b["Start Time"]))
+        );
         
         let orderedForDeduction = [...vesselPeriods, ...truckPeriods];
         
         // ===================================================
         // بناء periodFreeMap لتوزيع السماح على فترات TRSHP
         // ===================================================
-let remainingFree = totalFreeDays;
-let periodFreeMap = new Map();
+        let remainingFree = totalFreeDays;
+        let periodFreeMap = new Map();
 
-for (let tr of orderedForDeduction) {
-    let trStart = convertDate(tr["Start Time"]);
-    let trEnd = convertDate(tr["End Time"]);
-    // 🆕 استخدام الدالة المعدلة لخصم اليوم المشترك
-    let trDays = getAdjustedTrshpDays(tr, trshpArray);
-    let key = trStart + "|" + trEnd;
-    
-    let deduction = Math.min(trDays, remainingFree);
-    periodFreeMap.set(key, deduction);
-    remainingFree -= deduction;
-}
+        for (let tr of orderedForDeduction) {
+            let trStart = convertDate(tr["Start Time"]);
+            let trEnd = convertDate(tr["End Time"]);
+            let trDays = getAdjustedTrshpDays(tr, trshpArray);
+            let key = trStart + "|" + trEnd;
+            
+            let deduction = Math.min(trDays, remainingFree);
+            periodFreeMap.set(key, deduction);
+            remainingFree -= deduction;
+        }
         // ===================================================
         
         // ===================================================
@@ -2209,165 +2221,180 @@ for (let tr of orderedForDeduction) {
         // ===================================================
         let remainingFreeForTrshp;
         if (isExcl) {
-            // سماح مستقل → لا نخصم EXPRT من سماح TRSHP
             remainingFreeForTrshp = totalFreeDays;
         } else {
-            // سماح متداخل → نخصم EXPRT من سماح TRSHP
             remainingFreeForTrshp = totalFreeDays - Math.min(totalExprtDays, exFreeForDeduction);
         }
         // ===================================================
         
-        // ===================================================
-        // توزيع السماح المتبقي على فترات TRSHP (يبدأ من أول فترة)
-        // ===================================================
         let remainingFreeTrshp = remainingFreeForTrshp;
         
-// 🆕 ترتيب trshpArray تصاعدياً (الأقدم أولاً) قبل الحلقة
-let trshpArraySorted = [...trshpArray].sort((a, b) => {
-    let aDate = new Date(convertDate(a["Start Time"] || ""));
-    let bDate = new Date(convertDate(b["Start Time"] || ""));
-    return aDate - bDate;
-});
+        let trshpArraySorted = [...trshpArray].sort((a, b) => {
+            let aDate = new Date(convertDate(a["Start Time"] || ""));
+            let bDate = new Date(convertDate(b["Start Time"] || ""));
+            return aDate - bDate;
+        });
 
-for (let tr of trshpArraySorted) {
-    let drayStatus = tr ? (tr["Dray Status"] || "") : "";
-    let isReturn = (drayStatus === "RETURN");
-    
-    if (isReturn) continue;
-            
-            // حساب trDaysTotal لهذه الفترة
+        // ===================================================
+        // 🆕 حساب الإجماليات أولاً لضمان المعادلة المحاسبية الدقيقة
+        // ===================================================
+        let totalTrshpDays = 0;
+        let totalOverlap = 0;
+        let periodsData = [];
+
+        for (let tr of trshpArraySorted) {
+            let drayStatus = tr ? (tr["Dray Status"] || "") : "";
+            let isReturn = (drayStatus === "RETURN");
+            if (isReturn) continue; 
+
             let trStart = convertDate(tr["Start Time"] || "");
             let trEnd = convertDate(tr["End Time"] || "");
-            // 🆕 استخدام الأيام المعدلة (خصم اليوم المشترك)
-let trDaysTotal = getAdjustedTrshpDays(tr, trshpArray);
+            if (!trStart || !trEnd) continue;
+
+            let trDays = getAdjustedTrshpDays(tr, trshpArray);
+            totalTrshpDays += trDays;
             
-            // خصم السماح المتبقي من هذه الفترة
-            let deduction = Math.min(trDaysTotal, remainingFreeTrshp);
-            let trNetPeriod = trDaysTotal - deduction;
-            remainingFreeTrshp -= deduction;
-            
-            // ===================================================
-            // الحصول على سماح TRSHP (مع مراعاة الاستثناء)
-            // ===================================================
-            let key = trStart + "|" + trEnd;
-            let trFree = totalFreeDays;  // السماح الكلي في جميع الحالات
-            // ===================================================
-            
+            let overlap = 0;
+            if (returnStart && returnEnd) {
+                overlap += calculateDaysWithOverlapRemoved(trStart, trEnd, returnStart, returnEnd).overlap;
+            }
             for (let ex of exprtList) {
-                let exDrayStatus = ex["Dray Status"] || "";
-                let isReturnDray = (exDrayStatus === "RETURN");
-                
-                let exStart = convertDate(ex["Rule Start Time"] || "");
-                let exEnd = convertDate(ex["Rule End Time"] || "");
-                
-                if (!trStart || !trEnd || !exStart || !exEnd) continue;
-                
-                let overlapResult = calculateDaysWithOverlapRemoved(trStart, trEnd, exStart, exEnd);
-                let trDaysAfterOverlap = overlapResult.net1;
-                let exDays = overlapResult.net2;
-                let overlapDays = overlapResult.overlap;
-                
-                let flexString01 = ex["Flex String 01"] || tr["Flex String 01"] || "";
-                
-                // ===================================================
-                // حساب EXPRT Free (مع مراعاة الاستثناء)
-                // ===================================================
-                let obLocType = (ex["O/B Loc Type"] || "").trim().toUpperCase();
-                let isTruck = (obLocType === "TRUCK");
-
-                let hazardousFlag = (ex["Is Hazardous"] === "true" || ex["Is Hazardous"] === true);
-                let exFree;
-                if (isExcl) {
-                    // في حالة السماح المستقل، نعرض سماح EXPRT من الإعدادات
-                    exFree = getFreeDays(exprtPeriods1, lineId, exStart, flexString01, drayStatus, "", hazardousFlag);
-                } else if (isTruck) {
-                    exFree = 0;
-                } else {
-                    exFree = getFreeDays(exprtPeriods1, lineId, exStart, flexString01, drayStatus, "", hazardousFlag);
-                }
-                // ===================================================
-                
-                // ===================================================
-                // خصم الأيام المشتركة من TRSHP و EXPRT
-                // ===================================================
-                let exNet = exDays - Math.min(exDays, exFree);
-                if (exNet < 0) exNet = 0;
-                // لا نخصم overlapDays من EXPRT
-
-                let trNet = trNetPeriod - overlapDays;
-                if (trNet < 0) trNet = 0;
-                // ===================================================
-                
-                let resultCalc = { net1: trNet, net2: exNet, total: trNet + exNet };
-                
-                let method = isExcl ? "🚫 سماح مستقل" : "🔄 تداخل سماح";
-                
-                let equipType = container.equipmentType;
-                let sizeRaw = equipType.toString().trim();
-let size = sizeRaw.match(/^(\d+)/)?.[1] || "";
-
-if (!size) {
-    if (sizeRaw.startsWith("L5")) size = "45";
-    else if (sizeRaw.startsWith("L4")) size = "40";
-    else if (sizeRaw.startsWith("L2")) size = "20";
-}
-                let vesselName = tr["I/B Carrier Name"] || "";
-                let lineName = ex["Line ID"] || "";
-                
-                let isRefrigerated = ex["Is Refrigerated"] || "";
-                let type = (isRefrigerated === "true" || equipType.includes("R1")) ? "RF" : "GP";
-                let isOOG = ex["Is OOG"] || "";
-                let isBundled = ex["Is Bundled"] || "";
-                let isHazardous = ex["Is Hazardous"] || "";
-                let imdgClass = ex["IMDG Class"] || "";
-                
-                let isVessel = (tr["I/B Loc Type"] || "") === "VESSEL";
-                
-                let hasOtherPeriods = false;
-                for (let otherTr of trshpArray) {
-                    if (otherTr !== tr) {
-                        let otherType = otherTr["I/B Loc Type"] || "";
-                        if (otherType === "TRUCK" || otherType === "TRSHP") {
-                            hasOtherPeriods = true;
-                            break;
-                        }
+                if ((ex["Dray Status"] || "").toUpperCase() !== "RETURN") {
+                    let exStart = convertDate(ex["Rule Start Time"] || "");
+                    let exEnd = convertDate(ex["Rule End Time"] || "");
+                    if (exStart && exEnd) {
+                        overlap += calculateDaysWithOverlapRemoved(trStart, trEnd, exStart, exEnd).overlap;
                     }
                 }
-                
-                let hideExprt = isVessel && hasOtherPeriods;
-                
-                result.push({
-                    "Container No.": id,
-                    "Size": size,
-                    "Is OOG": isOOG,
-                    "Is Refrigerated": isRefrigerated,
-                    "flex_04": ex["Flex String 04"] || "",
-                    "Is Bundled": isBundled,
-                    "Is Hazardous": isHazardous,
-                    "IMDG Class": imdgClass,
-                    "Type": type,
-                    "Line ID": lineName,
-                    "طريقة الحساب": method,
-                    "Flex String 01": flexString01,
-                    "O/B Loc Type": ex["O/B Loc Type"] || "",
-                    "Vessel Name": isReturnDray ? "RETURN" : vesselName,
-                    "TRSHP Start": trStart,
-                    "TRSHP End": trEnd,
-                    "TRSHP Days": trDaysTotal,
-                    "Overlap": overlapDays,
-                    "TRSHP After Overlap": trDaysAfterOverlap,
-                    "TRSHP Free": trFree,
-                    "TRSHP Net": trNet,
-                    "EXPRT Start": hideExprt ? "—" : exStart,
-                    "EXPRT End": hideExprt ? "—" : exEnd,
-                    "EXPRT Days": hideExprt ? 0 : exDays,
-                    "EXPRT Free": hideExprt ? 0 : exFree,
-                    "EXPRT Net": hideExprt ? 0 : exNet,
-                    "Total Net": hideExprt ? trNet : resultCalc.total
-                });
             }
+            totalOverlap += overlap;
+            periodsData.push({ tr: tr, start: trStart, end: trEnd, days: trDays, overlap: overlap });
         }
+
+        // 🆕 استخدام remainingFreeForTrshp بدلاً من totalFreeDays
+        let netTrshpTotal = totalTrshpDays - totalOverlap - remainingFreeForTrshp;
+        if (netTrshpTotal < 0) netTrshpTotal = 0;
+
+        let remainingNet = netTrshpTotal;
+        let remainingFreeForDisplay = remainingFreeForTrshp; // 🆕 استخدام السماح المتبقي
+
         // ===================================================
+        // 🆕 حلقة العرض وتوزيع الصافي الإجمالي
+        // ===================================================
+        for (let i = 0; i < periodsData.length; i++) {
+            let p = periodsData[i];
+            let isLast = (i === periodsData.length - 1);
+            
+            let netForThisRow = 0;
+            if (isLast) {
+                netForThisRow = remainingNet; 
+            } else {
+                let effectiveDays = p.days - p.overlap;
+                let deduction = Math.min(effectiveDays, remainingFreeForDisplay);
+                remainingFreeForDisplay -= deduction;
+                netForThisRow = Math.max(0, effectiveDays - deduction);
+                if (netForThisRow > remainingNet) netForThisRow = remainingNet;
+                remainingNet -= netForThisRow;
+            }
+
+            let matchedExprt = exprtList.find(ex => (ex["Dray Status"] || "").toUpperCase() !== "RETURN");
+            let exStart = matchedExprt ? convertDate(matchedExprt["Rule Start Time"] || "") : "—";
+            let exEnd = matchedExprt ? convertDate(matchedExprt["Rule End Time"] || "") : "—";
+            
+            let exDays = matchedExprt ? diffDays(exStart, exEnd) : 0;
+
+            let obLocType = matchedExprt ? (matchedExprt["O/B Loc Type"] || "").trim().toUpperCase() : "";
+            let isTruck = (obLocType === "TRUCK");
+            let hazardousFlag = matchedExprt ? (matchedExprt["Is Hazardous"] === "true" || matchedExprt["Is Hazardous"] === true) : false;
+            let flexString01 = matchedExprt ? (matchedExprt["Flex String 01"] || p.tr["Flex String 01"] || "") : "";
+            
+            let exFree = 0;
+            if (matchedExprt) {
+                if (isExcl || !isTruck) {
+                    exFree = getFreeDays(exprtPeriods1, lineId, exStart, flexString01, p.tr["Dray Status"] || "", "", hazardousFlag);
+                }
+            }
+            
+            let exNet = matchedExprt ? Math.max(0, exDays - Math.min(exDays, exFree)) : 0;
+
+            let equipType = container.equipmentType;
+            let sizeRaw = equipType.toString().trim();
+            let size = sizeRaw.match(/^(\d+)/)?.[1] || "";
+            if (!size) {
+                if (sizeRaw.startsWith("L5")) size = "45";
+                else if (sizeRaw.startsWith("L4")) size = "40";
+                else if (sizeRaw.startsWith("L2")) size = "20";
+            }
+            let vesselName = p.tr["I/B Carrier Name"] || "";
+            
+            let isRefrigerated = matchedExprt ? (matchedExprt["Is Refrigerated"] || "") : "";
+            let type = (isRefrigerated === "true" || isRefrigerated === true || equipType.includes("R1")) ? "RF" : "GP";
+            
+            let isOOG = matchedExprt ? (matchedExprt["Is OOG"] || "") : "";
+            let isBundled = matchedExprt ? (matchedExprt["Is Bundled"] || "") : "";
+            let isHazardous = matchedExprt ? (matchedExprt["Is Hazardous"] || "") : "";
+            let imdgClass = matchedExprt ? (matchedExprt["IMDG Class"] || "") : "";
+            
+            result.push({
+                "Container No.": id,
+                "Size": size,
+                "Is OOG": isOOG,
+                "Is Refrigerated": isRefrigerated,
+                "flex_04": matchedExprt ? (matchedExprt["Flex String 04"] || "") : "",
+                "Is Bundled": isBundled,
+                "Is Hazardous": isHazardous,
+                "IMDG Class": imdgClass,
+                "Type": type,
+                "Line ID": matchedExprt ? (matchedExprt["Line ID"] || lineId) : lineId,
+                "طريقة الحساب": isExcl ? "🚫 سماح مستقل" : "🔄 تداخل سماح",
+                "Flex String 01": flexString01,
+                "O/B Loc Type": matchedExprt ? (matchedExprt["O/B Loc Type"] || "") : "",
+                "Vessel Name": vesselName,
+                "TRSHP Start": p.start,
+                "TRSHP End": p.end,
+                "TRSHP Days": p.days,
+                "Overlap": p.overlap,
+                "TRSHP After Overlap": p.days - p.overlap,
+                "TRSHP Free": totalFreeDays,
+                "TRSHP Net": netForThisRow,
+                "EXPRT Start": exStart,
+                "EXPRT End": exEnd,
+                "EXPRT Days": exDays,
+                "EXPRT Free": exFree,
+                "EXPRT Net": exNet,
+                "Total Net": netForThisRow + exNet
+            });
+        }
+
+        // ===================================================
+        // 🆕 إضافة سطر EXPRT RETURN في النهاية
+        // ===================================================
+        if (exprtReturn) {
+            let equipType = container.equipmentType;
+            let sizeRaw = equipType.toString().trim();
+            let size = sizeRaw.match(/^(\d+)/)?.[1] || "";
+            if (!size) {
+                if (sizeRaw.startsWith("L5")) size = "45";
+                else if (sizeRaw.startsWith("L4")) size = "40";
+                else if (sizeRaw.startsWith("L2")) size = "20";
+            }
+            
+            let isRefrigeratedReturn = exprtReturn["Is Refrigerated"] || "";
+            let typeReturn = (isRefrigeratedReturn === "true" || equipType.includes("R1")) ? "RF" : "GP";
+
+            result.push({
+                "Container No.": id, "Size": size, "Is OOG": exprtReturn["Is OOG"] || "false", 
+                "Is Refrigerated": isRefrigeratedReturn, 
+                "flex_04": "", "Is Bundled": "false", "Is Hazardous": "false", "IMDG Class": "",
+                "Type": typeReturn, "Line ID": lineId, "طريقة الحساب": "—", "Flex String 01": "",
+                "O/B Loc Type": "", "Vessel Name": "RETURN",
+                "TRSHP Start": "—", "TRSHP End": "—", "TRSHP Days": "—", "Overlap": "—", "TRSHP After Overlap": "—",
+                "TRSHP Free": "—", "TRSHP Net": 0, 
+                "EXPRT Start": returnStart || "—", "EXPRT End": returnEnd || "—", 
+                "EXPRT Days": diffDays(returnStart, returnEnd) || "—", "EXPRT Free": 0, "EXPRT Net": 0, 
+                "Total Net": 0
+            });
+        }
     }
     
     currentData1 = result;
@@ -2381,7 +2408,7 @@ function processAndDisplay2() {
     for (let [id, container] of containersMap.entries()) {
         let imprtData = container.imprt || container.trshpReturn;
         
-        // ========== التعديل: تحويل إلى مصفوفة ==========
+        // ========== تحويل EXPRT إلى مصفوفة ==========
         let exprtList = container.exprtList || [];
         if (container.exprt && exprtList.length === 0) {
             exprtList = [container.exprt];
@@ -2397,175 +2424,299 @@ function processAndDisplay2() {
         let imDays = diffDays(imStart, imEnd);
         let imprtType = container.imprt ? "IMPRT" : "TRSHP-RETURN";
         
-        // ========== التعديل: التكرار على كل EXPRT ==========
+        // ========== 🆕 تجميع فترات STRGE ==========
+        let strgeList = container.strgeList || [];
+        if (container.strge && strgeList.length === 0) {
+            strgeList = [container.strge];
+        }
+        
+        let lineId = container.lineId || "";
+        let isExcl = isExcluded(lineId, excludeLines2);
+        
+        // ========== التكرار على كل EXPRT ==========
         for (let ex of exprtList) {
             let exStart = convertDate(ex["Rule Start Time"] || "");
             let exEnd = convertDate(ex["Rule End Time"] || "");
             
             if (!exStart || !exEnd) continue;
             
-            let lineId = container.lineId || "";
-            let isExcl = isExcluded(lineId, excludeLines2);
             let exDays = diffDays(exStart, exEnd);
             
             let exFlexString01 = ex["Flex String 01"] || "";
             let exDrayStatus = ex["Dray Status"] || "";
-			let hazardousFlag = (ex["Is Hazardous"] === "true" || ex["Is Hazardous"] === true);
+            let hazardousFlag = (ex["Is Hazardous"] === "true" || ex["Is Hazardous"] === true);
             
-            // التحقق من Dray Status في EXPRT
             let isReturnDray = (exDrayStatus === "RETURN");
             
-            let st = container.strge;
-            let stStart = "", stEnd = "", stDays = 0, stFree = 0, stDaysAfterOverlap = 0, exDaysAfterOverlap = exDays, overlapDays = 0;
+            // ========== 🆕 بناء فترات STRGE مع أيامها ==========
+            let strgePeriods = [];
+            let stTotalDaysAll = 0;
             
-            // إذا كان Dray Status = RETURN، لا نحسب STRGE (نتركها فارغة)
-            if (!isReturnDray && st) {
-                stStart = convertDate(st["Start Time"] || "");
-                stEnd = convertDate(st["End Time"] || "");
-                if (stStart && stEnd) {
-                    stDays = diffDays(stStart, stEnd);
+            if (!isReturnDray) {
+                for (let st of strgeList) {
+                    let sStart = convertDate(st["Start Time"] || "");
+                    let sEnd = convertDate(st["End Time"] || "");
+                    if (!sStart || !sEnd) continue;
+                    
+                    let sDays = diffDays(sStart, sEnd);
                     
                     // استبعاد اليوم المشترك بين IMPRT و STRGE
-                    if (imEnd && stStart && imEnd === stStart) {
-                        stDays = stDays - 1;
-                        if (stDays < 0) stDays = 0;
+                    if (imEnd && sStart && imEnd === sStart) {
+                        sDays = sDays - 1;
+                        if (sDays < 0) sDays = 0;
+                    }
+					
+					                    // 🆕 استبعاد اليوم المشترك بين نهاية STRGE وبداية EXPRT (من STRGE)
+                    // نتحقق فقط للفترات التي تنتهي في نفس يوم بداية EXPRT
+                    if (exStart && sEnd && sEnd === exStart) {
+                        sDays = sDays - 1;
+                        if (sDays < 0) sDays = 0;
                     }
                     
-                    let stDrayStatus = st["Dray Status"] || "";
-                    let stFlexString01 = st["Flex String 01"] || "";
-					let stHazardousFlag = (st["Is Hazardous"] === "true" || st["Is Hazardous"] === true);
-                   stFree = getFreeDays(strgePeriods2, lineId, stStart, stFlexString01, stDrayStatus, "", stHazardousFlag);
-                    
-                    let overlapResult = calculateDaysWithOverlapRemoved(stStart, stEnd, exStart, exEnd);
-                    stDaysAfterOverlap = overlapResult.net1;
-                    
-                    if (imEnd && stStart && imEnd === stStart) {
-                        stDaysAfterOverlap = stDaysAfterOverlap - 1;
-                        if (stDaysAfterOverlap < 0) stDaysAfterOverlap = 0;
+					                    // 🆕 استبعاد اليوم المشترك بين نهاية فترة EXPRT RETURN وبداية STRGE
+                    let returnExprtEnd = "";
+                    for (let exTemp of exprtList) {
+                        if ((exTemp["Dray Status"] || "").trim().toUpperCase() === "RETURN") {
+                            returnExprtEnd = convertDate(exTemp["End Time"] || "");
+                            break;
+                        }
                     }
+                    if (returnExprtEnd && sStart && returnExprtEnd === sStart) {
+                        sDays = sDays - 1;
+                        if (sDays < 0) sDays = 0;
+                    }
+					
+                    strgePeriods.push({
+                        start: sStart,
+                        end: sEnd,
+                        days: sDays,
+                        rawData: st
+                    });
                     
-                    exDaysAfterOverlap = overlapResult.net2;
-                    overlapDays = overlapResult.overlap;
+                    stTotalDaysAll += sDays;
                 }
-            } else if (isReturnDray) {
-                // إذا كان Dray Status = RETURN، نترك القيم فارغة
-                stStart = "—";
-                stEnd = "—";
-                stDays = "—";
-                stFree = "—";
-                stDaysAfterOverlap = "—";
-                overlapDays = "—";
+                
+                // ترتيب تصاعدي بالتاريخ
+                strgePeriods.sort((a, b) => new Date(a.start) - new Date(b.start));
             }
             
-            // باقي الكود كما هو (exFree, strgeNet, exprtNet, result.push...)
-        
-        // التحقق من حالة EXPRT مع Dray Status = RETURN
+            // ========== 🆕 حساب STRGE Free على مجموع الفترات ==========
+            let stFree = 0;
+            if (stTotalDaysAll > 0 && strgePeriods.length > 0) {
+                let firstPeriod = strgePeriods[0];
+                let stDrayStatus = firstPeriod.rawData["Dray Status"] || "";
+                let stFlexString01 = firstPeriod.rawData["Flex String 01"] || "";
+                let stHazardousFlag = 
+                    (firstPeriod.rawData["Is Hazardous"] === "true" || 
+                     firstPeriod.rawData["Is Hazardous"] === true);
+                
+                stFree = getFreeDays(
+                    strgePeriods2, lineId, firstPeriod.start,
+                    stFlexString01, stDrayStatus, "", stHazardousFlag
+                );
+            }
+            
+            // ========== حساب EXPRT Free ==========
+            let exFree;
+            if (isReturnDray) {
+                exFree = 0;
+            } else {
+                exFree = getFreeDays(exprtPeriods2, lineId, exStart, exFlexString01, exDrayStatus, "", hazardousFlag);
+            }
+            
+            // ========== 🆕 حساب Net على المجموع ==========
+            let stNetTotal = 0, exNetTotal = 0;
+            
+            if (isReturnDray) {
+                stNetTotal = 0;
+                exNetTotal = 0;
+            } else if (stTotalDaysAll > 0) {
+                if (isExcl) {
+                    let indResult = calculateIndependent(stTotalDaysAll, stFree, exDays, exFree);
+                    stNetTotal = indResult.net1;
+                    exNetTotal = indResult.net2;
+                } else {
+                    let ovResult = calculateWithOverlap(stTotalDaysAll, stFree, exDays, exFree);
+                    stNetTotal = ovResult.net1;
+                    exNetTotal = ovResult.net2;
+                }
+            } else {
+                exNetTotal = exDays - exFree;
+                if (exNetTotal < 0) exNetTotal = 0;
+            }
+            
+            let totalNetAll = stNetTotal + exNetTotal;
+            
+            // ========== بيانات الحاوية ==========
+            let equipType = container.equipmentType;
+            let isRefrigerated = strgePeriods.length > 0 ? 
+                (strgePeriods[0].rawData["Is Refrigerated"] || "") : 
+                (imprtData ? imprtData["Is Refrigerated"] : "");
+            
+            let sizeRaw = equipType.toString().trim();
+            let size = sizeRaw.match(/^(\d+)/)?.[1] || "";
+            if (!size) {
+                if (sizeRaw.startsWith("L5")) size = "45";
+                else if (sizeRaw.startsWith("L4")) size = "40";
+                else if (sizeRaw.startsWith("L2")) size = "20";
+            }
+            
+            let type = (isRefrigerated === "true" || equipType.includes("R1")) ? "RF" : "GP";
+            
+            let vesselName = "";
+            if (container.imprt) {
+                vesselName = container.imprt["I/B Carrier Name"] || "";
+            }
+            if (!vesselName && imprtData) {
+                vesselName = imprtData["I/B Carrier Name"] || "";
+            }
+            if (!vesselName) vesselName = "—";
+            
+            let method = isExcl ? "🚫 سماح مستقل" : "🔄 تداخل سماح";
+            
+            let isOOG = ex["Is OOG"] || "";
+            let isRefrigeratedDisplay = ex["Is Refrigerated"] || "";
+            let flexString01 = ex["Flex String 01"] || "";
+            let isBundled = ex["Is Bundled"] || "";
+            let isHazardous = ex["Is Hazardous"] || "";
+            let imdgClass = ex["IMDG Class"] || "";
+            
+            // ========== 🆕 بناء السطور ==========
+            if (isReturnDray) {
+                // RETURN → سطر واحد بقيم فارغة
+                result.push({
+                    "Container No.": id,
+                    "Size": size,
+                    "Is OOG": isOOG,
+                    "Is Refrigerated": isRefrigeratedDisplay,
+                    "flex_04": ex["Flex String 04"] || "",
+                    "Is Bundled": isBundled,
+                    "Is Hazardous": isHazardous,
+                    "IMDG Class": imdgClass,
+                    "Type": type,
+                    "Line ID": lineId,
+                    "طريقة الحساب": method,
+                    "Flex String 01": flexString01,
+                    "_isFlexTrue": flexString01 === "TRUE" || flexString01 === "true" || flexString01 === "1",
+                    "نوع IMPRT": imprtType,
+                    "IMPRT Start": imStart,
+                    "IMPRT End": imEnd,
+                    "IMPRT Days": imDays,
+                    "STRGE Start": "—",
+                    "STRGE End": "—",
+                    "STRGE Days": "—",
+                    "Overlap Days": "—",
+                    "STRGE After Overlap": "—",
+                    "STRGE Free": "—",
+                    "STRGE Net": 0,
+                    "EXPRT Start": exStart,
+                    "EXPRT End": exEnd,
+                    "EXPRT Days": exDays,
+                    "EXPRT Free": 0,
+                    "EXPRT Net": 0,
+                    "Total Net": 0,
+                    "Vessel Name": "RETURN"
+                });
+            } else if (strgePeriods.length === 0) {
+                // لا STRGE → سطر واحد بقيم "—"
+                result.push({
+                    "Container No.": id,
+                    "Size": size,
+                    "Is OOG": isOOG,
+                    "Is Refrigerated": isRefrigeratedDisplay,
+                    "flex_04": ex["Flex String 04"] || "",
+                    "Is Bundled": isBundled,
+                    "Is Hazardous": isHazardous,
+                    "IMDG Class": imdgClass,
+                    "Type": type,
+                    "Line ID": lineId,
+                    "طريقة الحساب": method,
+                    "Flex String 01": flexString01,
+                    "_isFlexTrue": flexString01 === "TRUE" || flexString01 === "true" || flexString01 === "1",
+                    "نوع IMPRT": imprtType,
+                    "IMPRT Start": imStart,
+                    "IMPRT End": imEnd,
+                    "IMPRT Days": imDays,
+                    "STRGE Start": "—",
+                    "STRGE End": "—",
+                    "STRGE Days": "—",
+                    "Overlap Days": "—",
+                    "STRGE After Overlap": "—",
+                    "STRGE Free": "—",
+                    "STRGE Net": 0,
+                    "EXPRT Start": exStart,
+                    "EXPRT End": exEnd,
+                    "EXPRT Days": exDays,
+                    "EXPRT Free": exFree,
+                    "EXPRT Net": exNetTotal,
+                    "Total Net": exNetTotal,
+                    "Vessel Name": vesselName
+                });
+            } else {
+                // 🆕 فترة أو أكثر من STRGE → سطر لكل فترة، EXPRT على الأخير فقط
+                
+                // [التعديل هنا]: توزيع السماح تدريجياً من الفترة الأقدم للأحدث
+                let stDeductionTotal = stTotalDaysAll - stNetTotal;
+                let remainingDeduction = stDeductionTotal;
+                for (let p of strgePeriods) {
+                    let deductedForPeriod = Math.min(p.days, remainingDeduction);
+                    p.free = deductedForPeriod;
+                    p.net = p.days - deductedForPeriod;
+                    remainingDeduction -= deductedForPeriod;
+                }
 
-let exFree;
-if (isReturnDray) {
-    // إذا كان EXPRT و Dray Status = RETURN → لا سماح
-    exFree = 0;
-} else {
-    // الحالات العادية: تطبق إعدادات السماح
-    exFree = getFreeDays(exprtPeriods2, lineId, exStart, exFlexString01, exDrayStatus, "", hazardousFlag);
-}
-        
-let strgeNet = 0, exprtNet = 0;
-
-// إذا كان RETURN، اجعل الصافي = 0
-if (isReturnDray) {
-    strgeNet = 0;
-    exprtNet = 0;
-} else if (stStart && stEnd && stStart !== "—") {
-    if (isExcl) {
-        let indResult = calculateIndependent(stDaysAfterOverlap, stFree, exDaysAfterOverlap, exFree);
-        strgeNet = indResult.net1;
-        exprtNet = indResult.net2;
-    } else {
-        let overlapResultCalc = calculateWithOverlap(stDaysAfterOverlap, stFree, exDaysAfterOverlap, exFree);
-        strgeNet = overlapResultCalc.net1;
-        exprtNet = overlapResultCalc.net2;
-    }
-} else {
-    exprtNet = exDaysAfterOverlap - exFree;
-    if (exprtNet < 0) exprtNet = 0;
-}
-        
-        let totalNet = strgeNet + exprtNet;
-        let imprtType = container.imprt ? "IMPRT" : "TRSHP-RETURN";
-        
-        let equipType = container.equipmentType;
-        let isRefrigerated = st ? st["Is Refrigerated"] : (imprtData ? imprtData["Is Refrigerated"] : "");
-        let sizeRaw = equipType.toString().trim();
-let size = sizeRaw.match(/^(\d+)/)?.[1] || "";
-
-if (!size) {
-    if (sizeRaw.startsWith("L5")) size = "45";
-    else if (sizeRaw.startsWith("L4")) size = "40";
-    else if (sizeRaw.startsWith("L2")) size = "20";
-}
-        let type = (isRefrigerated === "true" || equipType.includes("R1")) ? "RF" : "GP";
-        // اسم السفينة من IMPRT فقط (حدث الدخول)
-		let vesselName = "";
-		if (container.imprt) {
-			vesselName = container.imprt["I/B Carrier Name"] || "";
-		}
-		if (!vesselName && imprtData) {
-			vesselName = imprtData["I/B Carrier Name"] || "";
-		}
-		if (!vesselName) {
-			vesselName = "—";
-		}
-        let method = isExcl ? "🚫 سماح مستقل" : "🔄 تداخل سماح";
-        
-		let isOOG = ex["Is OOG"] || "";
-		let isRefrigeratedDisplay = ex["Is Refrigerated"] || "";
-		let flexString01 = ex["Flex String 01"] || "";      // ← أضف هذا
-		let flexString04 = ex["Flex String 04"] || "";      // ← أضف هذا
-		let isBundled = ex["Is Bundled"] || "";
-		let isHazardous = ex["Is Hazardous"] || "";
-		let imdgClass = ex["IMDG Class"] || "";
-        
-        result.push({
-            "Container No.": id,
-            "Size": size,
-            "Is OOG": isOOG,
-            "Is Refrigerated": isRefrigeratedDisplay,
-            "flex_04": ex["Flex String 04"] || "",
-            "Is Bundled": isBundled,
-            "Is Hazardous": isHazardous,
-            "IMDG Class": imdgClass,
-            "Type": type,
-            "Line ID": lineId,
-            "طريقة الحساب": method,
-            "Flex String 01": flexString01,
-			"_isFlexTrue": flexString01 === "TRUE" || flexString01 === "true" || flexString01 === "1", // ← أضف هذا
-            "نوع IMPRT": imprtType,
-            "IMPRT Start": imStart,
-            "IMPRT End": imEnd,
-            "IMPRT Days": imDays,
-            "STRGE Start": stStart === "" ? "—" : stStart,
-            "STRGE End": stEnd === "" ? "—" : stEnd,
-            "STRGE Days": stDays === 0 ? "—" : stDays,
-            "Overlap Days": overlapDays === 0 ? "—" : overlapDays,
-            "STRGE After Overlap": stDaysAfterOverlap === 0 ? "—" : stDaysAfterOverlap,
-            "STRGE Free": stFree === 0 ? "—" : stFree,
-            "STRGE Net": strgeNet,
-            "EXPRT Start": exStart,
-            "EXPRT End": exEnd,
-            "EXPRT Days": exDaysAfterOverlap,
-            "EXPRT Free": exFree,
-            "EXPRT Net": exprtNet,
-            "Total Net": totalNet,
-            "Vessel Name": isReturnDray ? "RETURN" : vesselName
-        });
-        } // ← إغلاق حلقة for (of exprtList)
-    } // ← إغلاق حلقة for (of containersMap)
+                for (let i = 0; i < strgePeriods.length; i++) {
+                    let period = strgePeriods[i];
+                    let isLast = (i === strgePeriods.length - 1);
+                    
+                    result.push({
+                        "Container No.": id,
+                        "Size": size,
+                        "Is OOG": isOOG,
+                        "Is Refrigerated": isRefrigeratedDisplay,
+                        "flex_04": ex["Flex String 04"] || "",
+                        "Is Bundled": isBundled,
+                        "Is Hazardous": isHazardous,
+                        "IMDG Class": imdgClass,
+                        "Type": type,
+                        "Line ID": lineId,
+                        "طريقة الحساب": method,
+                        "Flex String 01": flexString01,
+                        "_isFlexTrue": flexString01 === "TRUE" || flexString01 === "true" || flexString01 === "1",
+                        "نوع IMPRT": imprtType,
+                        "IMPRT Start": imStart,
+                        "IMPRT End": imEnd,
+                        "IMPRT Days": imDays,
+                        
+                        // [التعديل هنا]: وضع صافي وسماح كل فترة في سطرها
+                        "STRGE Start": period.start,
+                        "STRGE End": period.end,
+                        "STRGE Days": period.days,
+                        "Overlap Days": "—",
+                        "STRGE After Overlap": period.days,
+                        "STRGE Free": period.free,
+                        "STRGE Net": period.net,
+                        
+                        "EXPRT Start": isLast ? exStart : "—",
+                        "EXPRT End": isLast ? exEnd : "—",
+                        "EXPRT Days": isLast ? exDays : "—",
+                        "EXPRT Free": isLast ? exFree : "—",
+                        "EXPRT Net": isLast ? exNetTotal : "—",
+                        
+                        // [التعديل هنا]: جمع صافي الفترة مع صافي EXPRT في السطر الأخير
+                        "Total Net": isLast ? (period.net + exNetTotal) : period.net,
+                        
+                        "Vessel Name": vesselName
+                    });
+                }
+            }
+        } // إغلاق حلقة for (of exprtList)
+    } // إغلاق حلقة for (of containersMap)
     
     currentData2 = result;
     renderTable2("bodyTab2", currentData2, "searchTab2", "typeTab2", "statsTab2");
     updateHeaderFromDisplayData('2', currentData2);
-} // ← إغلاق الدالةAndDisplay2
+} // إغلاق الدالة processAndDisplay2
 
 
 function processAndDisplay3() {
@@ -4672,16 +4823,16 @@ function renderAdvancedStatsTab2(data) {
                 "Is Hazardous": item["Is Hazardous"],
                 "Flex String 01": item["Flex String 01"] || "",
                 "Dray Status": item["Dray Status"] || "",
-                "STRGE Net": item["STRGE Net"] || 0,
-                "EXPRT Net": item["EXPRT Net"] || 0,
-                "EXPRT Days": item["EXPRT Days"] || 0,
+"STRGE Net": (item["STRGE Net"] === "—" ? 0 : (parseFloat(item["STRGE Net"]) || 0)),
+"EXPRT Net": (item["EXPRT Net"] === "—" ? 0 : (parseFloat(item["EXPRT Net"]) || 0)),
+"EXPRT Days": (item["EXPRT Days"] === "—" ? 0 : (parseFloat(item["EXPRT Days"]) || 0)),
                 "_isFlexTrue": item["_isFlexTrue"] || false
             });
         } else {
             let existing = uniqueContainers.get(containerNo);
-            existing["STRGE Net"] += item["STRGE Net"] || 0;
-            existing["EXPRT Net"] += item["EXPRT Net"] || 0;
-            existing["EXPRT Days"] += item["EXPRT Days"] || 0;
+if (item["STRGE Net"] !== "—") existing["STRGE Net"] += (parseFloat(item["STRGE Net"]) || 0);
+if (item["EXPRT Net"] !== "—") existing["EXPRT Net"] += (parseFloat(item["EXPRT Net"]) || 0);
+if (item["EXPRT Days"] !== "—") existing["EXPRT Days"] += (parseFloat(item["EXPRT Days"]) || 0);
             if (item["_isFlexTrue"] === true) {
                 existing["_isFlexTrue"] = true;
                 existing["Flex String 01"] = "TRUE";
@@ -10839,6 +10990,14 @@ async function saveFileToGitHub() {
             }
         }
         
+		        // 🆕 تحديث الفهرس ومسح الذاكرة المؤقتة
+        if (typeof generateAndSaveIndexFromTree === 'function') {
+            await generateAndSaveIndexFromTree();
+            localStorage.removeItem('archive_index_cache');
+            localStorage.removeItem('archive_index_time');
+        }
+
+		
         // ===== 12. عرض النتيجة =====
         if (footer) {
             footer.innerHTML = `✅ تم حفظ الملف في الأرشيف: <a href="${fileUrl}" target="_blank" style="color:#28a745;font-weight:bold;">${newFileName}</a>`;
@@ -11047,111 +11206,191 @@ function parseGitHubFileName(fileName) {
 // ============================================================
 // 📋 ملء القوائم المنسدلة
 // ============================================================
-async function initGitHubFilesPanel() {
-    const folders = await loadArchiveFolders();
-    ghFilesList = [];
+async function initGitHubFilesPanel(forceRefresh = false) {
+    const shipSelect = document.getElementById("ghShipSelect");
+    if (!shipSelect) return;
 
-    for (let folder of folders) {
-        // 1. استخراج البيانات من اسم المجلد (المصدر الموثوق)
+    const token = localStorage.getItem("github_token");
+    // 🆕 لا نعود إذا لم يوجد توكن — القراءة تعمل على المستودع العام
+    if (!token) {
+        console.warn("⚠️ [الفهرس] لا يوجد توكن — القراءة ستتم بدون مصادقة (حد 60 طلب/ساعة)");
+    }
+
+    // ⚡ 1. محاولة القراءة من الذاكرة المؤقتة (سريع جداً)
+    const cacheTime = localStorage.getItem('archive_index_time');
+    const cachedData = localStorage.getItem('archive_index_cache');
+    
+    // إذا كانت البيانات محفوظة وعمرها أقل من 5 دقائق، استخدمها فوراً
+    if (!forceRefresh && cachedData && cacheTime && (Date.now() - parseInt(cacheTime) < 300000)) {
+        console.log("⚡ [الفهرس] تم التحميل من الذاكرة المؤقتة للمتصفح (سرعة فائقة)");
+        processArchiveIndexData(JSON.parse(cachedData), shipSelect);
+        return;
+    }
+
+    // ⏳ 2. جلب ملف الفهرس من GitHub
+    console.log("⏳ [الفهرس] جاري جلب archive_index.json من GitHub...");
+    try {
+        const indexUrl = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/archive/archive_index.json?ref=${GH_BRANCH}`;
+
+        // 🆕 Authorization يُضاف فقط إن وُجد توكن (المشاهد يقرأ بدون توكن)
+        const headers = { "Accept": "application/vnd.github+json" };
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+
+        const resp = await fetch(indexUrl, { headers });
+
+        if (resp.ok) {
+            const data = await resp.json();
+            const content = decodeURIComponent(escape(atob(data.content.replace(/\n/g, ''))));
+            const indexData = JSON.parse(content);
+            // 🆕 حفظ المجلدات في الذاكرة ليعمل الإشعار الأخضر فوراً
+            window.savedArchiveFolders = indexData.folders; 
+			
+            // حفظ في الذاكرة المؤقتة
+            localStorage.setItem('archive_index_cache', JSON.stringify(indexData));
+            localStorage.setItem('archive_index_time', Date.now().toString());
+            
+            console.log(`⚡ [الفهرس] تم جلب الفهرس بنجاح (آخر تحديث: ${new Date(indexData.lastUpdated).toLocaleString()})`);
+            processArchiveIndexData(indexData, shipSelect);
+        } 
+        else if (resp.status === 404) {
+            console.log("⚠️ [الفهرس] غير موجود! جاري إنشائه من Git Trees API لأول مرة...");
+            // 🆕 البناء يتطلب توكن (لأنه يكتب على GitHub) — المشاهد لا يستطيع
+            if (token && typeof generateAndSaveIndexFromTree === 'function') {
+                await generateAndSaveIndexFromTree(); // استدعاء دالة البناء (موجودة في archive.js)
+                initGitHubFilesPanel(true); // إعادة المحاولة بعد الإنشاء
+            } else if (!token) {
+                console.warn("⚠️ [الفهرس] لا يوجد توكن — لا يمكن إنشاء الفهرس. تواصل مع المدير.");
+                shipSelect.innerHTML = '<option value="">⚠️ الفهرس غير موجود — تواصل مع المدير</option>';
+            } else {
+                console.error("❌ دالة generateAndSaveIndexFromTree غير معرفة!");
+            }
+        } 
+        else {
+            throw new Error(`HTTP ${resp.status}`);
+        }
+    } catch (e) {
+        console.error("❌ [الفهرس] فشل التحميل:", e.message);
+        // كحل أخير، استخدم البيانات القديمة إن وجدت
+        if (cachedData) {
+            processArchiveIndexData(JSON.parse(cachedData), shipSelect);
+        }
+    }
+}
+
+// 🆕 دالة مساعدة لمعالجة البيانات وعرضها
+function processArchiveIndexData(indexData, shipSelect) {
+    ghFilesList = [];
+    
+    const user = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
+    const isAdmin = user && (user.role === 'admin' || user.lineIds.includes('*'));
+    const allowedLinesUpper = isAdmin ? [] : (user ? user.lineIds.map(l => String(l).trim().toUpperCase()) : []);
+
+    for (let folder of indexData.folders) {
         const isDatedFolder = /^(.*?)_(\d{4}-\d{2}-\d{2})$/.test(folder.name);
-        
-        let folderShipName = "";
+        let folderShipName = folder.name;
         let folderDate = "";
         
         if (isDatedFolder) {
             const match = folder.name.match(/^(.*?)_(\d{4}-\d{2}-\d{2})$/);
-            folderShipName = match[1].replace(/_/g, " "); // YM_WORLD تصبح YM WORLD
-            folderDate = match[2];                        // 2026-10-08
-        } else {
-            folderShipName = folder.name;                 // NNSALP أو FINALOUT
-            folderDate = "";                              // بدون تاريخ
+            folderShipName = match[1].replace(/_/g, " ").trim();
+            folderDate = match[2];
         }
 
-        // 2. المرور على ملفات الإكسيل (الطريقة الأصلية)
+        let folderLines = folder.lines || ["ALL"];
+        if (folderLines.length === 0) folderLines = ["ALL"];
+
         let hasExcelFiles = false;
         for (let file of folder.files) {
-            // تجاهل الملفات التي ليست إكسيل
             if (!/\.(xlsx|xls)$/i.test(file.name)) continue;
-
-            let parsed = parseGitHubFileName(file.name);
-            if (!parsed) continue;
-
-            // الفلتر الحاسم: منع المستندات العشوائية التي لا تطابق نوع المجلد
+            
+            // 1. فلتر الحماية: منع الملفات التي لا تطابق نوع المجلد (مثل DISH_984)
+            let parsed = typeof parseGitHubFileName === 'function' ? parseGitHubFileName(file.name) : {};
+            if (!parsed) parsed = {};
+            
             if (isDatedFolder && parsed.isFinalout === true) continue;
             if (!isDatedFolder && parsed.isFinalout === false) continue;
 
-            hasExcelFiles = true;
+            // 🆕 التعديل: حُذف hasExcelFiles = true من هنا (كان قبل فحص الصلاحيات)
 
-            // إضافة الملف للقائمة النهائية
-            ghFilesList.push({
-                shipName: folderShipName,
-                line: parsed.line || "ALL",
-                date: folderDate,
-                isFinalout: !isDatedFolder,
-                fullFileName: file.name,
-                path: file.path,
-                name: file.name,
-                download_url: file.download_url,
-                sha: file.sha,
-                folderName: folder.name
-            });
+            // 🆕 2. السر هنا: نأخذ الخط من اسم الملف أولاً (مثل ZIM في ZIM_VIETNAM_ZIM...)
+            let fileLine = parsed.line ? String(parsed.line).trim().toUpperCase() : null;
+
+            if (fileLine) {
+                // إذا كان اسم الملف يحتوي على الخط، نربطه بهذا الخط فقط ونتجاهل _info.json
+                if (!isAdmin && user) {
+                    let hasAccess = allowedLinesUpper.includes(fileLine) || fileLine === "ALL";
+                    if (!hasAccess) continue;
+                }
+                // 🆕 التعديل: يُنفَّذ فقط بعد نجاح فحص الصلاحيات
+                hasExcelFiles = true;
+                ghFilesList.push({
+                    shipName: folderShipName,
+                    line: fileLine,
+                    date: folderDate,
+                    isFinalout: !isDatedFolder,
+                    fullFileName: file.name,
+                    path: file.path,
+                    name: file.name,
+                    download_url: file.download_url,
+                    sha: file.sha,
+                    folderName: folder.name
+                });
+            } else {
+                // إذا لم يحتوي اسم الملف على خط، نستخدم الخطوط من _info.json (كاحتياط)
+                for (let line of folderLines) {
+                    let lineUpper = String(line).trim().toUpperCase();
+                    if (!isAdmin && user) {
+                        let nameToCheck = (file.name + " " + folder.name).toUpperCase();
+                        let hasAccess = allowedLinesUpper.includes(lineUpper) || lineUpper === "ALL" || allowedLinesUpper.some(allowed => nameToCheck.includes(allowed));
+                        if (!hasAccess) continue;
+                    }
+                    // 🆕 التعديل: يُنفَّذ فقط بعد نجاح فحص الصلاحيات
+                    hasExcelFiles = true;
+                    ghFilesList.push({
+                        shipName: folderShipName,
+                        line: lineUpper,
+                        date: folderDate,
+                        isFinalout: !isDatedFolder,
+                        fullFileName: file.name,
+                        path: file.path,
+                        name: file.name,
+                        download_url: file.download_url,
+                        sha: file.sha,
+                        folderName: folder.name
+                    });
+                }
+            }
         }
 
-        // 🆕 3. إذا لم يوجد أي ملف إكسيل (مجلد فارغ جديد)، نقرأ _info.json لكي تظهر السفينة
+        // 3. إذا كان المجلد فارغاً من ملفات الإكسيل المطابقة، نضيفه كسفينة متاحة
         if (!hasExcelFiles) {
-            try {
-                const token = localStorage.getItem("github_token");
-                const GH_OWNER = "markingdchc";
-                const GH_REPO = "marking.dchc";
-                const GH_BRANCH = "main";
-                
-                const infoUrl = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/archive/${folder.name}/_info.json?ref=${GH_BRANCH}`;
-                const resp = await fetch(infoUrl, {
-                    headers: token ? { "Authorization": `Bearer ${token}` } : {}
-                });
+            for (let line of folderLines) {
+                let lineUpper = String(line).trim().toUpperCase();
 
-                if (resp.ok) {
-                    const data = await resp.json();
-                    const info = JSON.parse(decodeURIComponent(escape(atob(data.content.replace(/\n/g, '')))));
-
-                    let lines = info.lines || [];
-                    if (lines.length === 0) lines = ["ALL"];
-
-                    for (let line of lines) {
-                        ghFilesList.push({
-                            shipName: folderShipName,
-                            line: line,
-                            date: folderDate,
-                            isFinalout: !isDatedFolder,
-                            fullFileName: folder.name,
-                            path: folder.path,
-                            name: folder.name,
-                            download_url: "",
-                            sha: folder.sha,
-                            folderName: folder.name
-                        });
-                    }
+                if (!isAdmin && user) {
+                    let nameToCheck = folder.name.toUpperCase();
+                    let hasAccess = allowedLinesUpper.includes(lineUpper) || lineUpper === "ALL" || allowedLinesUpper.some(allowed => nameToCheck.includes(allowed));
+                    if (!hasAccess) continue; 
                 }
-            } catch (e) {
-                console.warn(`⚠️ لم يتم العثور على _info.json للمجلد ${folder.name}`);
+
+                ghFilesList.push({
+                    shipName: folderShipName,
+                    line: lineUpper, 
+                    date: folderDate,
+                    isFinalout: !isDatedFolder,
+                    fullFileName: folder.name,
+                    path: folder.path,
+                    name: folder.name,
+                    download_url: "",
+                    sha: "",
+                    folderName: folder.name
+                });
             }
         }
     }
     
-    // 🔐 فلترة الملفات حسب خطوط المستخدم
-    const user = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
-    if (user && user.role !== 'admin' && !user.lineIds.includes('*')) {
-        const before = ghFilesList.length;
-        ghFilesList = ghFilesList.filter(f => user.lineIds.includes(f.line));
-        console.log(`🔐 فلترة الأرشيف: ${before} → ${ghFilesList.length} (الخطوط المسموحة: ${user.lineIds.join(', ')})`);
-    }
-    
-    const shipSelect = document.getElementById("ghShipSelect");
-    if (!shipSelect) return;
-    
+    // تعبئة القائمة المنسدلة
     shipSelect.innerHTML = '<option value="">-- اختر السفينة --</option>';
-    
-    // جمع القيم الفريدة من shipName
     const ships = [...new Set(ghFilesList.map(f => f.shipName))].sort();
     ships.forEach(ship => {
         const opt = document.createElement("option");
@@ -11163,7 +11402,7 @@ async function initGitHubFilesPanel() {
     document.getElementById("ghLineSelect").innerHTML = '<option value="">-- اختر الخط --</option>';
     document.getElementById("ghDateSelect").innerHTML = '<option value="">-- اختر التاريخ --</option>';
     
-    console.log(`📋 تم تحميل ${ships.length} سفينة`, ships);
+    console.log(`📋 تم تحميل ${ships.length} سفينة من الفهرس بنجاح`, ships);
 }
 
 function updateLineDropdown() {
@@ -11371,9 +11610,18 @@ async function downloadSelectedGitHubFile() {
 // 🎯 تهيئة اللوحة عند فتح الصفحة
 // ============================================================
 document.addEventListener("DOMContentLoaded", function() {
-    // تهيئة اللوحة بعد 2 ثانية (حتى يتم تحميل الـ Token)
+    // تهيئة اللوحة بعد 2 ثانية (تعمل مع أو بدون توكن)
     setTimeout(async () => {
-        await initGitHubFilesPanel();
+        // 🆕 فحص عمر الكاش — إذا كان قديماً (> 5 دقائق)، جلب جديد
+        const cacheTime = localStorage.getItem('archive_index_time');
+        const cacheAge = cacheTime ? (Date.now() - parseInt(cacheTime)) : Infinity;
+        
+        if (cacheAge > 300000) {
+            console.log('🔄 [الفهرس] الكاش قديم — جلب جديد من GitHub');
+            await initGitHubFilesPanel(true);
+        } else {
+            await initGitHubFilesPanel();
+        }
     }, 2000);
     
     // ربط الأحداث
@@ -11383,12 +11631,47 @@ document.addEventListener("DOMContentLoaded", function() {
         const downloadBtn = document.getElementById("ghDownloadBtn");
         const refreshBtn = document.getElementById("ghRefreshBtn");
         
+        // ربط القوائم المنسدلة
         if (shipSelect) shipSelect.addEventListener("change", updateLineDropdown);
         if (lineSelect) lineSelect.addEventListener("change", updateDateDropdown);
         if (downloadBtn) downloadBtn.addEventListener("click", downloadSelectedGitHubFile);
-        if (refreshBtn) refreshBtn.addEventListener("click", async function() {
-            await initGitHubFilesPanel();
-        });
+        
+        // 🆕 ربط زر تحديث القائمة (النسخة الشاملة)
+        if (refreshBtn) {
+            refreshBtn.addEventListener("click", async function() {
+                console.log("🔄 جاري التحديث الشامل (بناء الفهرس + تحديث القائمة)...");
+                
+                // تغيير نص الزر مؤقتاً لإعلام المستخدم
+                const originalText = refreshBtn.innerHTML;
+                refreshBtn.innerHTML = "⏳ جاري التحديث...";
+                refreshBtn.disabled = true;
+
+                try {
+                    // 1. مسح الذاكرة المؤقتة للمتصفح
+                    localStorage.removeItem('archive_index_cache');
+                    localStorage.removeItem('archive_index_time');
+                    
+                    // 2. إعادة بناء ملف الفهرس (archive_index.json) من Git Trees API
+                    if (typeof generateAndSaveIndexFromTree === 'function') {
+                        await generateAndSaveIndexFromTree();
+                    } else {
+                        console.warn("⚠️ دالة generateAndSaveIndexFromTree غير موجودة في archive.js");
+                    }
+                    
+                    // 3. إعادة قراءة الفهرس الجديد وتعبئة القوائم المنسدلة
+                    await initGitHubFilesPanel(true); 
+                    
+                    console.log("✅ اكتمل التحديث بنجاح!");
+                } catch (error) {
+                    console.error("❌ حدث خطأ أثناء التحديث:", error);
+                    alert("حدث خطأ أثناء تحديث القائمة. يرجى المحاولة مرة أخرى.");
+                } finally {
+                    // إعادة الزر إلى حالته الطبيعية
+                    refreshBtn.innerHTML = originalText;
+                    refreshBtn.disabled = false;
+                }
+            });
+        }
     }, 100);
 });
 
