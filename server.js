@@ -267,44 +267,6 @@ app.get('/api/archive/list', requireAuth, async (req, res, next) => {
     } catch (e) { next(e); }
 });
 
-// ============================================================
-// 📊 إحصائيات لوحة المؤشرات (تُحسب على ما يحق للمستخدم رؤيته فقط)
-// ============================================================
-app.get('/api/archive/stats', requireAuth, async (req, res, next) => {
-    try {
-        const all = await getSnapshot();
-        const files = [];
-        for (const f of all) for (const x of f.files) {
-            if (!sec.canAccessFile(req.user, x.name)) continue;
-            files.push({ folder: f.name, name: x.name, size: x.size, modified: new Date(x.modified).toISOString(),
-                         line: sec.extractLineFromFileName(x.name) || '—' });
-        }
-        files.sort((a, b) => b.modified.localeCompare(a.modified));
-        const count = (key) => {
-            const m = {};
-            for (const f of files) { const k = key(f); m[k] = (m[k] || 0) + 1; }
-            return m;
-        };
-        const top = (m, n) => Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, n).map(([name, value]) => ({ name, value }));
-        const withUrl = f => ({ ...f, url: signedFileUrl(req.user, f.folder, f.name) });
-        const latest = files[0] || null;
-        const months = Object.entries(count(f => f.modified.slice(0, 7))).sort().slice(-6).map(([name, value]) => ({ name, value }));
-        res.json({
-            success: true,
-            generatedAt: new Date().toISOString(),
-            totals: { files: files.length, folders: new Set(files.map(f => f.folder)).size, bytes: files.reduce((a, f) => a + f.size, 0) },
-            latest: latest && {
-                folder: latest.folder, modified: latest.modified,
-                files: files.filter(f => f.folder === latest.folder).map(withUrl)
-            },
-            recent: files.slice(0, 8).map(withUrl),
-            byLine: top(count(f => f.line), 8),
-            byType: top(count(f => extOf(f.name).replace('.', '').toUpperCase() || '—'), 6),
-            byMonth: months
-        });
-    } catch (e) { next(e); }
-});
-
 app.get('/api/archive/file/:folder/:file', async (req, res, next) => {
     try {
         const { folder, file } = req.params;              // Express فكّ الترميز مسبقاً

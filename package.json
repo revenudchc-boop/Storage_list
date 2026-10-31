@@ -7,7 +7,7 @@
   "engines": { "node": ">=18" },
   "scripts": {
     "start": "node server.js",
-    "test": "node tests/security.test.js",
+    "test": "node tests/security.test.js && node tests/dashboard.test.js",
     "migrate-users": "node tools/migrate-users.js"
   },
   "dependencies": {
