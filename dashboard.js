@@ -1,4 +1,37 @@
 // ============================================================
+// 🌗 الوضع الليلي / النهاري (يُحفظ اختيار المستخدم، والافتراضي حسب نظام الجهاز)
+// ============================================================
+(function () {
+    try {
+        const KEY = 'theme';
+        let saved = null;
+        try { saved = localStorage.getItem(KEY); } catch (e) { /* ignore */ }
+        const sys = () => (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        const apply = v => {
+            document.documentElement.dataset.theme = v;
+            const b = document.getElementById('themeToggle');
+            if (b) { b.textContent = v === 'dark' ? '☀️' : '🌙'; b.title = v === 'dark' ? 'الوضع النهاري' : 'الوضع الليلي'; }
+        };
+        apply(saved === 'dark' || saved === 'light' ? saved : sys());
+        const make = () => {
+            if (document.getElementById('themeToggle')) return;
+            const b = document.createElement('span');
+            b.id = 'themeToggle'; b.setAttribute('role', 'button'); b.tabIndex = 0;
+            const flip = () => {
+                const n = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+                try { localStorage.setItem(KEY, n); } catch (e) { /* ignore */ }
+                apply(n);
+            };
+            b.onclick = flip;
+            b.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } };
+            document.body.appendChild(b);
+            apply(document.documentElement.dataset.theme);
+        };
+        if (document.body) make(); else document.addEventListener('DOMContentLoaded', make);
+    } catch (e) { /* بيئة بدون DOM */ }
+})();
+
+// ============================================================
 // 🧭 القائمة الجانبية + 📊 لوحة المؤشرات
 // البيانات تُجمع من الخادم المحلي ومن GitHub (archive_index.json) وتُدمج، ثم تُفلتر حسب خطوط المستخدم
 // ============================================================
@@ -86,9 +119,9 @@
         return `<div class="dv-donut"><div class="ring" style="background:conic-gradient(${stops})"><div><b>${sum}</b><small>${esc(centerLabel)}</small></div></div>
             <ul>${items.map((i, k) => `<li><u style="background:${COLORS[k % COLORS.length]}"></u>${esc(i.name)}<b>${i.value}</b></li>`).join('')}</ul></div>`;
     }
-    const link = f => f.url ? `<a href="${esc(f.url)}" target="_blank" rel="noopener">عرض ↗</a>` : '';
+    // لا روابط لفتح ملفات الأرشيف في اللوحة: عرض معلومات فقط
     const srcTag = f => `<em class="tag ${f.local && f.gh ? 'both' : f.local ? 'loc' : 'gh'}">${f.local && f.gh ? 'محلي + GitHub' : f.local ? 'محلي' : 'GitHub'}</em>`;
-    const row = (f, withFolder) => `<li><span class="nm" title="${esc(f.name)}">📄 ${withFolder ? esc(f.folder) + ' / ' : ''}${esc(f.name)}</span><span class="mt">${fmtSize(f.size)}${f.date ? ' · ' + ago(f.date) : ''}</span>${srcTag(f)}${link(f)}</li>`;
+    const row = (f, withFolder) => `<li><span class="nm" title="${esc(f.name)}">📄 ${withFolder ? esc(f.folder) + ' / ' : ''}${esc(f.name)}</span><span class="mt">${fmtSize(f.size)}${f.date ? ' · ' + ago(f.date) : ''}</span>${srcTag(f)}</li>`;
     const kpi = (icon, label, val, sub, c) => `<div class="dv-kpi" style="--c:${c}"><div class="ic">${icon}</div><div><small>${label}</small><div class="n">${val}</div><div class="s">${sub || '&nbsp;'}</div></div></div>`;
 
     function render(d, st) {
@@ -130,6 +163,69 @@
         try { render(analyze(local, gh), st); } catch (e) { body.innerHTML = `<div class="dv-empty big">❌ ${esc(e.message)}</div>`; }
     }
 
+    // ---------- تلوين كل الأزرار بتدرجات مختلفة (ثابتة لكل زر حسب نصه وموضعه) ----------
+    const SKIP = /\b(delete-btn|edit-btn|tab-btn|sb-item|tb-chip)\b/;
+    function colorize() {
+        const app = document.getElementById('appContainer');
+        if (!app) return;
+        app.querySelectorAll('button, .file-label').forEach(b => {
+            if (b.dataset.bx !== undefined || SKIP.test(b.className) || b.id === 'logoutBtn' || b.closest('#sidebar, #toolbar')) return;
+            const txt = (b.textContent || '').trim();
+            let h = 7;
+            for (let i = 0; i < txt.length; i++) h = (h * 31 + txt.charCodeAt(i)) % 9973;
+            const pos = b.parentElement ? [...b.parentElement.children].indexOf(b) : 0;
+            const k = (h + pos * 3) % 10;
+            b.dataset.bx = k;
+            b.classList.add('bx', 'bx' + k);
+        });
+    }
+    function watchButtons() {
+        let t = null;
+        colorize();
+        new MutationObserver(() => { clearTimeout(t); t = setTimeout(colorize, 200); })
+            .observe(document.getElementById('appContainer'), { childList: true, subtree: true });
+    }
+
+    // ---------- شريط الأدوات الأفقي القابل للطي (يجمع أزرار منطقة الرفع الأصلية) ----------
+    function buildToolbar(header) {
+        const area = $('.upload-area');
+        if (!area) return;
+        const bar = document.createElement('section');
+        bar.id = 'toolbar';
+        bar.innerHTML = '<div class="tb-head"><span class="tb-title">🧰 الأدوات <small id="tbCount"></small></span><span class="tb-toggle" id="tbToggle" role="button" tabindex="0" title="طي / فرد">▾</span></div><div class="tb-body" id="tbBody"></div>';
+        header.after(bar);
+        document.body.classList.add('has-toolbar');
+        const body = $('#tbBody');
+        let timer = null;
+
+        const sync = () => {
+            const items = [...new Set([...area.querySelectorAll('button, label.file-label, .file-label, .settings-btn')])]
+                .filter(el => getComputedStyle(el).display !== 'none' && el.textContent.trim());
+            body.innerHTML = '';
+            items.forEach((el, i) => {
+                const chip = document.createElement('span');
+                chip.className = 'tb-chip c' + (i % 7);
+                chip.setAttribute('role', 'button'); chip.tabIndex = 0;
+                chip.textContent = el.textContent.trim();
+                const run = () => el.click();
+                chip.onclick = run;
+                chip.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); } };
+                body.appendChild(chip);
+            });
+            $('#tbCount').textContent = items.length ? `(${items.length})` : '';
+        };
+        sync();
+        new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(sync, 150); })
+            .observe(area, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class', 'disabled'] });
+
+        const KEY = 'toolbarCollapsed';
+        const apply = c => { bar.classList.toggle('collapsed', c); $('#tbToggle').textContent = c ? '▸' : '▾'; };
+        apply(localStorage.getItem(KEY) === '1');
+        const toggle = () => { const c = !bar.classList.contains('collapsed'); apply(c); try { localStorage.setItem(KEY, c ? '1' : '0'); } catch (e) { /* ignore */ } };
+        $('#tbToggle').onclick = toggle;
+        $('.tb-head').onclick = e => { if (e.target.id !== 'tbToggle') toggle(); };
+    }
+
     // ---------- القائمة الجانبية ----------
     let built = false;
     const setActive = b => { document.querySelectorAll('#sidebar .sb-item').forEach(x => x.classList.toggle('active', x === b)); $('#sidebar').classList.remove('open'); };
@@ -162,6 +258,8 @@
         view.innerHTML = '<div class="dv-head"><div><h2>لوحة المؤشرات</h2><p>نظرة شاملة على الأرشيف المحلي وGitHub</p></div><div class="dv-tools"><span id="dvStatus"></span><button class="dv-btn" id="dvRefresh">🔄 تحديث</button></div></div><div id="dvBody"></div>';
         const header = $('#appContainer .header');
         header.parentNode.insertBefore(view, header.nextSibling);
+        buildToolbar(header);
+        watchButtons();
         document.body.classList.add('has-sidebar', 'dash-mode');
 
         side.addEventListener('click', e => {
