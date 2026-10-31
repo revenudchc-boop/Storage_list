@@ -133,16 +133,18 @@
             ${kpi('💾', 'حجم الأرشيف', fmtSize(d.bytes), '', '#f59e0b')}
             ${kpi('🔄', 'المزامنة', s.localOnly + s.ghOnly === 0 ? 'متطابقة ✓' : (s.localOnly + s.ghOnly) + ' فرق', `${s.both} ملف في المصدرين`, s.localOnly + s.ghOnly === 0 ? '#16a34a' : '#ef4444')}
         </div>
-        <div class="dv-grid g2">
-            <div class="dv-card"><h3>🚢 آخر سفينة${L ? ` <small dir="ltr">${esc(L.name)}</small>` : ''}</h3>
-                ${L ? `<ul class="dv-list">${L.files.map(f => row(f)).join('')}</ul>` : '<div class="dv-empty">لا توجد ملفات بعد</div>'}</div>
-            <div class="dv-card"><h3>🕘 آخر الملفات</h3>
-                ${d.recent.length ? `<ul class="dv-list">${d.recent.map(f => row(f, true)).join('')}</ul>` : '<div class="dv-empty">لا توجد ملفات</div>'}</div>
-        </div>
+
         <div class="dv-grid g3">
             <div class="dv-card"><h3>🏷️ حسب الخط الملاحي</h3>${hbars(d.byLine)}</div>
             <div class="dv-card"><h3>📅 النشاط الشهري</h3>${vbars(d.byMonth)}</div>
             <div class="dv-card"><h3>🗂️ نوع الملفات</h3>${donut(d.byType, 'ملف')}</div>
+        </div>
+		
+		<div class="dv-grid g2">
+            <div class="dv-card"><h3>🚢 آخر سفينة${L ? ` <small dir="ltr">${esc(L.name)}</small>` : ''}</h3>
+                ${L ? `<ul class="dv-list">${L.files.map(f => row(f)).join('')}</ul>` : '<div class="dv-empty">لا توجد ملفات بعد</div>'}</div>
+            <div class="dv-card"><h3>🕘 آخر الملفات</h3>
+                ${d.recent.length ? `<ul class="dv-list">${d.recent.map(f => row(f, true)).join('')}</ul>` : '<div class="dv-empty">لا توجد ملفات</div>'}</div>
         </div>
         <div class="dv-grid g2">
             <div class="dv-card"><h3>☁️ حالة المصادر</h3>${donut([{ name: 'في المصدرين', value: s.both }, { name: 'محلي فقط', value: s.localOnly }, { name: 'GitHub فقط', value: s.ghOnly }].filter(i => i.value), 'ملف')}
