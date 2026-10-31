@@ -190,40 +190,84 @@
     function buildToolbar(header) {
         const area = $('.upload-area');
         if (!area) return;
+
         const bar = document.createElement('section');
         bar.id = 'toolbar';
-        bar.innerHTML = '<div class="tb-head"><span class="tb-title">🧰 الأدوات <small id="tbCount"></small></span><span class="tb-toggle" id="tbToggle" role="button" tabindex="0" title="طي / فرد">▾</span></div><div class="tb-body" id="tbBody"></div>';
+        bar.innerHTML = `
+            <div class="tb-head">
+                <span class="tb-title">🧰 الأدوات <small id="tbCount"></small></span>
+                <span class="tb-toggle" id="tbToggle" role="button" tabindex="0" title="طي / فرد">▾</span>
+            </div>
+            <div class="tb-body" id="tbBody" style="display:flex; flex-direction:column; gap:16px; padding:16px 20px; width:100%; box-sizing:border-box;">
+                
+                <!-- حاوية شريط الأرشيف -->
+                <div id="tbArchiveContainer" style="width:100%; display:block;"></div>
+
+                <!-- قسم الأزرار السريعة -->
+                <div class="tb-buttons-section" style="display:flex; flex-direction:column; width:100%; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px; box-sizing:border-box;">
+                    <div class="tb-section-title" style="font-weight:800; font-size:14px; color:#1e3a8a; margin:0 0 12px 0;">⚡ إجراءات سريعة</div>
+                    <div class="tb-chips-container" id="tbChipsContainer" style="display:flex; flex-wrap:wrap; gap:10px; width:100%;"></div>
+                </div>
+
+            </div>
+        `;
+
         header.after(bar);
         document.body.classList.add('has-toolbar');
-        const body = $('#tbBody');
-        let timer = null;
 
+        // 🔥 نقل الشريط الأصلي بالكامل (بما فيه الإشعار الأخضر) إلى داخل الشريط الجديد
+        const originalPanel = document.getElementById('githubFilesPanel');
+        if (originalPanel) {
+            const archiveContainer = document.getElementById('tbArchiveContainer');
+            archiveContainer.appendChild(originalPanel);
+            // التأكد من أن العنصر مرئي (إزالة الإخفاء من CSS)
+            originalPanel.style.setProperty('display', 'flex', 'important');
+            originalPanel.style.setProperty('margin', '0', 'important');
+        }
+
+        // مزامنة الأزرار السريعة
+        const chipsContainer = $('#tbChipsContainer');
+        let syncTimer = null;
         const sync = () => {
+            if (!chipsContainer) return;
             const items = [...new Set([...area.querySelectorAll('button, label.file-label, .file-label, .settings-btn')])]
                 .filter(el => getComputedStyle(el).display !== 'none' && el.textContent.trim());
-            body.innerHTML = '';
+            chipsContainer.innerHTML = '';
             items.forEach((el, i) => {
                 const chip = document.createElement('span');
                 chip.className = 'tb-chip c' + (i % 7);
-                chip.setAttribute('role', 'button'); chip.tabIndex = 0;
+                chip.setAttribute('role', 'button');
+                chip.tabIndex = 0;
                 chip.textContent = el.textContent.trim();
                 const run = () => el.click();
                 chip.onclick = run;
                 chip.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); } };
-                body.appendChild(chip);
+                chipsContainer.appendChild(chip);
             });
-            $('#tbCount').textContent = items.length ? `(${items.length})` : '';
+            const cnt = $('#tbCount');
+            if (cnt) cnt.textContent = items.length ? '(' + items.length + ')' : '';
         };
         sync();
-        new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(sync, 150); })
+        new MutationObserver(() => { clearTimeout(syncTimer); syncTimer = setTimeout(sync, 150); })
             .observe(area, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class', 'disabled'] });
 
+        // حالة الطي/الفرد
         const KEY = 'toolbarCollapsed';
-        const apply = c => { bar.classList.toggle('collapsed', c); $('#tbToggle').textContent = c ? '▸' : '▾'; };
+        const apply = c => {
+            bar.classList.toggle('collapsed', c);
+            const t = $('#tbToggle');
+            if (t) t.textContent = c ? '▸' : '▾';
+        };
         apply(localStorage.getItem(KEY) === '1');
-        const toggle = () => { const c = !bar.classList.contains('collapsed'); apply(c); try { localStorage.setItem(KEY, c ? '1' : '0'); } catch (e) { /* ignore */ } };
-        $('#tbToggle').onclick = toggle;
-        $('.tb-head').onclick = e => { if (e.target.id !== 'tbToggle') toggle(); };
+        const toggle = () => {
+            const c = !bar.classList.contains('collapsed');
+            apply(c);
+            try { localStorage.setItem(KEY, c ? '1' : '0'); } catch (e) { /* ignore */ }
+        };
+        const toggleBtn = $('#tbToggle');
+        if (toggleBtn) toggleBtn.onclick = toggle;
+        const head = $('.tb-head');
+        if (head) head.onclick = e => { if (e.target.id !== 'tbToggle') toggle(); };
     }
 
     // ---------- القائمة الجانبية ----------
