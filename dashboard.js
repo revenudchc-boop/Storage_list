@@ -133,20 +133,17 @@
             ${kpi('💾', 'حجم الأرشيف', fmtSize(d.bytes), '', '#f59e0b')}
             ${kpi('🔄', 'المزامنة', s.localOnly + s.ghOnly === 0 ? 'متطابقة ✓' : (s.localOnly + s.ghOnly) + ' فرق', `${s.both} ملف في المصدرين`, s.localOnly + s.ghOnly === 0 ? '#16a34a' : '#ef4444')}
         </div>
-
-        <div class="dv-grid g3">
-            <div class="dv-card"><h3>🏷️ حسب الخط الملاحي</h3>${hbars(d.byLine)}</div>
-            <div class="dv-card"><h3>📅 النشاط الشهري</h3>${vbars(d.byMonth)}</div>
-            <div class="dv-card"><h3>🗂️ نوع الملفات</h3>${donut(d.byType, 'ملف')}</div>
-        </div>
-		
-		        <div class="dv-grid g2">
+        <div class="dv-grid g2">
             <div class="dv-card"><h3>🚢 آخر سفينة${L ? ` <small dir="ltr">${esc(L.name)}</small>` : ''}</h3>
                 ${L ? `<ul class="dv-list">${L.files.map(f => row(f)).join('')}</ul>` : '<div class="dv-empty">لا توجد ملفات بعد</div>'}</div>
             <div class="dv-card"><h3>🕘 آخر الملفات</h3>
                 ${d.recent.length ? `<ul class="dv-list">${d.recent.map(f => row(f, true)).join('')}</ul>` : '<div class="dv-empty">لا توجد ملفات</div>'}</div>
         </div>
-		
+        <div class="dv-grid g3">
+            <div class="dv-card"><h3>🏷️ حسب الخط الملاحي</h3>${hbars(d.byLine)}</div>
+            <div class="dv-card"><h3>📅 النشاط الشهري</h3>${vbars(d.byMonth)}</div>
+            <div class="dv-card"><h3>🗂️ نوع الملفات</h3>${donut(d.byType, 'ملف')}</div>
+        </div>
         <div class="dv-grid g2">
             <div class="dv-card"><h3>☁️ حالة المصادر</h3>${donut([{ name: 'في المصدرين', value: s.both }, { name: 'محلي فقط', value: s.localOnly }, { name: 'GitHub فقط', value: s.ghOnly }].filter(i => i.value), 'ملف')}
                 <p class="dv-note">${st.local ? '' : '⚠️ الخادم المحلي غير متصل؛ تُعرض بيانات GitHub فقط. '}${st.gh ? '' : '⚠️ تعذّر قراءة فهرس GitHub. '}${s.localOnly ? `يوجد ${s.localOnly} ملف محلي غير مرفوع إلى GitHub (استخدم «مزامنة» من نافذة الأرشيف). ` : ''}${s.ghOnly ? `يوجد ${s.ghOnly} ملف على GitHub غير موجود محلياً.` : ''}</p></div>
@@ -189,88 +186,75 @@
             .observe(document.getElementById('appContainer'), { childList: true, subtree: true });
     }
 
+    // ---------- شريط "تحميل من GitHub" القابل للطي (ينقل اللوحة الأصلية نفسها بدون نسخ) ----------
+    function buildGhBar(header) {
+        const panel = document.getElementById('githubFilesPanel');
+        if (!panel || document.getElementById('ghbar')) return;
+        const bar = document.createElement('section');
+        bar.id = 'ghbar';
+        // الصف نفسه (اللوحة الأصلية) + شريط مختصر يظهر عند الطي + زر الطي/الفرد
+        bar.innerHTML = '<div class="ghb-head"><span class="tb-title">☁️ تحميل من GitHub <small id="ghbSummary"></small></span></div><div id="ghbBody"></div><span class="tb-toggle" id="ghbToggle" role="button" tabindex="0" title="طي / فرد">▾</span>';
+        header.after(bar);
+        $('#ghbBody').appendChild(panel);          // نفس العنصر: كل المستمعات والمعرّفات باقية
+
+        const sel = id => { const e = document.getElementById(id); return e && e.value ? e.options[e.selectedIndex].text : ''; };
+        const summary = () => {
+            const t = [sel('ghShipSelect'), sel('ghLineSelect'), sel('ghDateSelect')].filter(Boolean).join(' • ');
+            $('#ghbSummary').textContent = t ? '— ' + t : '';
+        };
+        panel.addEventListener('change', summary);
+        summary();
+
+        const KEY = 'ghbarCollapsed';
+        const apply = c => { bar.classList.toggle('collapsed', c); $('#ghbToggle').textContent = c ? '▸' : '▾'; if (c) summary(); };
+        apply(localStorage.getItem(KEY) === '1');
+        const toggle = () => { const c = !bar.classList.contains('collapsed'); apply(c); try { localStorage.setItem(KEY, c ? '1' : '0'); } catch (e) { /* ignore */ } };
+        // الضغط في أي مكان فارغ من الشريط يطويه أو يفرده (كشريط الأدوات)، دون التأثير على عناصر التحكم نفسها
+        bar.addEventListener('click', e => {
+            if (e.target.closest('select, option, button, input, label, a, #archiveNotification')) return;
+            toggle();
+        });
+        $('#ghbToggle').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } };
+    }
+
     // ---------- شريط الأدوات الأفقي القابل للطي (يجمع أزرار منطقة الرفع الأصلية) ----------
     function buildToolbar(header) {
         const area = $('.upload-area');
         if (!area) return;
-
         const bar = document.createElement('section');
         bar.id = 'toolbar';
-        bar.innerHTML = `
-            <div class="tb-head">
-                <span class="tb-title">🧰 الأدوات <small id="tbCount"></small></span>
-                <span class="tb-toggle" id="tbToggle" role="button" tabindex="0" title="طي / فرد">▾</span>
-            </div>
-            <div class="tb-body" id="tbBody" style="display:flex; flex-direction:column; gap:16px; padding:16px 20px; width:100%; box-sizing:border-box;">
-                
-                <!-- حاوية شريط الأرشيف -->
-                <div id="tbArchiveContainer" style="width:100%; display:block;"></div>
-
-                <!-- قسم الأزرار السريعة -->
-                <div class="tb-buttons-section" style="display:flex; flex-direction:column; width:100%; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px; box-sizing:border-box;">
-                    <div class="tb-section-title" style="font-weight:800; font-size:14px; color:#1e3a8a; margin:0 0 12px 0;">⚡ إجراءات سريعة</div>
-                    <div class="tb-chips-container" id="tbChipsContainer" style="display:flex; flex-wrap:wrap; gap:10px; width:100%;"></div>
-                </div>
-
-            </div>
-        `;
-
+        bar.innerHTML = '<div class="tb-head"><span class="tb-title">🧰 الأدوات <small id="tbCount"></small></span><span class="tb-toggle" id="tbToggle" role="button" tabindex="0" title="طي / فرد">▾</span></div><div class="tb-body" id="tbBody"></div>';
         header.after(bar);
         document.body.classList.add('has-toolbar');
+        const body = $('#tbBody');
+        let timer = null;
 
-        // 🔥 نقل الشريط الأصلي بالكامل (بما فيه الإشعار الأخضر) إلى داخل الشريط الجديد
-        const originalPanel = document.getElementById('githubFilesPanel');
-        if (originalPanel) {
-            const archiveContainer = document.getElementById('tbArchiveContainer');
-            archiveContainer.appendChild(originalPanel);
-            // التأكد من أن العنصر مرئي (إزالة الإخفاء من CSS)
-            originalPanel.style.setProperty('display', 'flex', 'important');
-            originalPanel.style.setProperty('margin', '0', 'important');
-        }
-
-        // مزامنة الأزرار السريعة
-        const chipsContainer = $('#tbChipsContainer');
-        let syncTimer = null;
         const sync = () => {
-            if (!chipsContainer) return;
             const items = [...new Set([...area.querySelectorAll('button, label.file-label, .file-label, .settings-btn')])]
                 .filter(el => getComputedStyle(el).display !== 'none' && el.textContent.trim());
-            chipsContainer.innerHTML = '';
+            body.innerHTML = '';
             items.forEach((el, i) => {
                 const chip = document.createElement('span');
                 chip.className = 'tb-chip c' + (i % 7);
-                chip.setAttribute('role', 'button');
-                chip.tabIndex = 0;
+                chip.setAttribute('role', 'button'); chip.tabIndex = 0;
                 chip.textContent = el.textContent.trim();
                 const run = () => el.click();
                 chip.onclick = run;
                 chip.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); } };
-                chipsContainer.appendChild(chip);
+                body.appendChild(chip);
             });
-            const cnt = $('#tbCount');
-            if (cnt) cnt.textContent = items.length ? '(' + items.length + ')' : '';
+            $('#tbCount').textContent = items.length ? `(${items.length})` : '';
         };
         sync();
-        new MutationObserver(() => { clearTimeout(syncTimer); syncTimer = setTimeout(sync, 150); })
+        new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(sync, 150); })
             .observe(area, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class', 'disabled'] });
 
-        // حالة الطي/الفرد
         const KEY = 'toolbarCollapsed';
-        const apply = c => {
-            bar.classList.toggle('collapsed', c);
-            const t = $('#tbToggle');
-            if (t) t.textContent = c ? '▸' : '▾';
-        };
+        const apply = c => { bar.classList.toggle('collapsed', c); $('#tbToggle').textContent = c ? '▸' : '▾'; };
         apply(localStorage.getItem(KEY) === '1');
-        const toggle = () => {
-            const c = !bar.classList.contains('collapsed');
-            apply(c);
-            try { localStorage.setItem(KEY, c ? '1' : '0'); } catch (e) { /* ignore */ }
-        };
-        const toggleBtn = $('#tbToggle');
-        if (toggleBtn) toggleBtn.onclick = toggle;
-        const head = $('.tb-head');
-        if (head) head.onclick = e => { if (e.target.id !== 'tbToggle') toggle(); };
+        const toggle = () => { const c = !bar.classList.contains('collapsed'); apply(c); try { localStorage.setItem(KEY, c ? '1' : '0'); } catch (e) { /* ignore */ } };
+        $('#tbToggle').onclick = toggle;
+        $('.tb-head').onclick = e => { if (e.target.id !== 'tbToggle') toggle(); };
     }
 
     // ---------- القائمة الجانبية ----------
@@ -306,6 +290,7 @@
         const header = $('#appContainer .header');
         header.parentNode.insertBefore(view, header.nextSibling);
         buildToolbar(header);
+        buildGhBar(header);   // يظهر فوق شريط الأدوات
         watchButtons();
         document.body.classList.add('has-sidebar', 'dash-mode');
 

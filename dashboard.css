@@ -409,3 +409,109 @@ html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] #dashVi
 html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] #dashView .tag.gh{background:rgba(139,92,246,.22);color:#c4b5fd}
 html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] #dashView .dv-pill.ok{background:rgba(34,197,94,.18);color:#86efac}
 html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] #dashView .dv-pill.bad{background:rgba(245,158,11,.18);color:#fcd34d}
+
+/* ============================================================
+   ☁️ 3.6 — شريط "تحميل من GitHub" القابل للطي (فوق شريط الأدوات)
+   ============================================================ */
+#toolbar,#ghbar{background:rgba(255,255,255,.85);backdrop-filter:blur(8px);border-radius:18px;box-shadow:0 10px 30px rgba(15,39,64,.09);margin:0 0 16px;overflow:hidden;border:1px solid #e6edf6}
+#ghbar.collapsed .tb-body{max-height:0;padding-top:0;padding-bottom:0;opacity:0;overflow:hidden}
+#ghbar .tb-body{display:block;max-height:600px}
+body.dash-mode #ghbar #githubFilesPanel{display:flex!important}
+#ghbar #githubFilesPanel{margin:0!important;padding:0!important;background:transparent!important;border:0!important;flex-wrap:wrap!important;overflow:visible!important;gap:10px!important;width:100%}
+#ghbar #githubFilesPanel select{min-width:150px;flex:1 1 150px}
+#ghbar #archiveNotification{flex:1 1 100%;margin-top:4px!important}
+#ghbar #ghStatus{flex:1 1 100%}
+@media print{#ghbar{display:none!important}}
+
+/* ============================================================
+   🌙 3.6 — إصلاح ألوان الوضع الليلي في الجداول
+   الخلايا الملوّنة بخلفيات فاتحة من script.js تحتاج نصاً داكناً (كان النص فاتحاً فلا يُرى)
+   ============================================================ */
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] tr.imprt-row{background:rgba(56,189,248,.14)!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] td.number,html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] td strong{color:#e5edf7}
+/* الشريطان في الوضع الليلي */
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] #ghbar{background:rgba(15,26,45,.9);border-color:#1f2b40}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] #ghbar .tb-title{color:#e5edf7}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] #ghbar .tb-toggle{background:#1e2c46;color:#93c5fd}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] #ghStatus,html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] #ghbar .tb-title small{color:#94a3b8!important}
+
+/* ============================================================
+   ☁️ 3.7 — شريط GitHub: صف واحد كما في الشكل المطلوب (قابل للطي)
+   ============================================================ */
+#ghbar{display:flex;align-items:center;gap:12px;background:#e8f4f8;border:1px solid #b8daff;border-radius:16px;padding:10px 14px;margin:0 0 16px;box-shadow:0 6px 18px rgba(15,39,64,.07);backdrop-filter:none;overflow:hidden}
+#ghbar #ghbBody{flex:1;min-width:0}
+#ghbar #githubFilesPanel{display:flex!important;flex-wrap:nowrap!important;overflow-x:auto!important;overflow-y:hidden;align-items:center!important;gap:10px!important;padding:2px 2px 6px!important;margin:0!important;background:transparent!important;border:0!important;width:100%}
+#ghbar #githubFilesPanel select{flex:0 0 auto!important;min-width:140px;background:#fff}
+#ghbar #githubFilesPanel button{flex:0 0 auto;white-space:nowrap}
+#ghbar #archiveNotification{flex:0 0 auto!important;margin:0!important;white-space:nowrap;flex-wrap:nowrap!important}
+#ghbar #ghStatus{flex:0 0 auto}
+#ghbar .ghb-head{display:none;flex:1;align-items:center;cursor:pointer;min-width:0}
+#ghbar .tb-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#ghbar .tb-toggle{flex:0 0 auto}
+#ghbar.collapsed #ghbBody{display:none}
+#ghbar.collapsed .ghb-head{display:flex}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] #ghbar{background:#0f1a2d;border-color:#1f2b40}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] #ghbar #githubFilesPanel select{background:#0b1626!important}
+
+/* ============================================================
+   🌙 3.7 — الوضع الليلي: تغيير لون الخلية نفسها (لا لون الخط)
+   الخلايا ذات الخلفية الفاتحة المكتوبة في script.js تُقلب إلى درجة داكنة بنفس اللون، ويصبح نصها فاتحاً تلقائياً
+   ============================================================ */
+
+/* ============================================================
+   🌙 3.7.1 — الوضع الليلي: خلفيات الخلايا الفاتحة تُستبدل بدرجات داكنة واضحة من نفس اللون
+   (الألوان مأخوذة من script.js نفسه، وتُطابق صيغتي hex و rgb)
+   ============================================================ */
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] :is(td,th,tr,div,p,span):is([style*="#fff3cd" i],[style*="rgb(255, 243, 205)" i]){background:#5c4a14!important;color:#fde68a!important;-webkit-text-fill-color:#fde68a!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] :is(td,th):is([style*="#fff3cd" i],[style*="rgb(255, 243, 205)" i]) *:not(button){color:#fde68a!important;-webkit-text-fill-color:#fde68a!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] :is(td,th,tr,div,p,span):is([style*="#f8e8a0" i],[style*="rgb(248, 232, 160)" i]){background:#66541a!important;color:#fde68a!important;-webkit-text-fill-color:#fde68a!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] :is(td,th):is([style*="#f8e8a0" i],[style*="rgb(248, 232, 160)" i]) *:not(button){color:#fde68a!important;-webkit-text-fill-color:#fde68a!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] :is(td,th,tr,div,p,span):is([style*="#e3f2fd" i],[style*="rgb(227, 242, 253)" i]){background:transparent!important;color:#dbe6f5!important;-webkit-text-fill-color:#dbe6f5!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] :is(td,th):is([style*="#e3f2fd" i],[style*="rgb(227, 242, 253)" i]) *:not(button){color:#dbe6f5!important;-webkit-text-fill-color:#dbe6f5!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] :is(td,th,tr,div,p,span):is([style*="#cce5ff" i],[style*="rgb(204, 229, 255)" i]){background:#1f4f8a!important;color:#dbeafe!important;-webkit-text-fill-color:#dbeafe!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] :is(td,th):is([style*="#cce5ff" i],[style*="rgb(204, 229, 255)" i]) *:not(button){color:#dbeafe!important;-webkit-text-fill-color:#dbeafe!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] :is(td,th,tr,div,p,span):is([style*="#d4edda" i],[style*="rgb(212, 237, 218)" i]){background:transparent!important;color:#dbe6f5!important;-webkit-text-fill-color:#dbe6f5!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] :is(td,th):is([style*="#d4edda" i],[style*="rgb(212, 237, 218)" i]) *:not(button){color:#dbe6f5!important;-webkit-text-fill-color:#dbe6f5!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] :is(td,th,tr,div,p,span):is([style*="#f8d7da" i],[style*="rgb(248, 215, 218)" i]){background:#6a2630!important;color:#fecaca!important;-webkit-text-fill-color:#fecaca!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] :is(td,th):is([style*="#f8d7da" i],[style*="rgb(248, 215, 218)" i]) *:not(button){color:#fecaca!important;-webkit-text-fill-color:#fecaca!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] :is(td,th,tr,div,p,span):is([style*="#f8f9fa" i],[style*="rgb(248, 249, 250)" i]){background:#26354d!important;color:#e2e8f0!important;-webkit-text-fill-color:#e2e8f0!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] :is(td,th):is([style*="#f8f9fa" i],[style*="rgb(248, 249, 250)" i]) *:not(button){color:#e2e8f0!important;-webkit-text-fill-color:#e2e8f0!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] :is(td,th,tr,div,p,span):is([style*="#e9ecef" i],[style*="rgb(233, 236, 239)" i]){background:#2a3a54!important;color:#e2e8f0!important;-webkit-text-fill-color:#e2e8f0!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] :is(td,th):is([style*="#e9ecef" i],[style*="rgb(233, 236, 239)" i]) *:not(button){color:#e2e8f0!important;-webkit-text-fill-color:#e2e8f0!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] :is(td,th,tr,div,p,span):is([style*="#dee2e6" i],[style*="rgb(222, 226, 230)" i]){background:#30425e!important;color:#e2e8f0!important;-webkit-text-fill-color:#e2e8f0!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] :is(td,th):is([style*="#dee2e6" i],[style*="rgb(222, 226, 230)" i]) *:not(button){color:#e2e8f0!important;-webkit-text-fill-color:#e2e8f0!important}
+
+/* 3.7.2 — أعمدة الأيام والصافي (أزرق/أخضر فاتح في الكود الأصلي) تظهر في الوضع الليلي مثل بقية الأعمدة */
+
+/* 3.7.3 — الشريط كله قابل للضغط للطي/الفرد */
+#ghbar{cursor:pointer}
+#ghbar select,#ghbar button,#ghbar input{cursor:pointer}
+#ghbar #archiveNotification{cursor:default}
+
+/* ============================================================
+   📊 3.7.4 — نافذة اختيار الأعمدة (.modal) — الوضعان النهاري والليلي
+   النافذة خارج #appContainer، لذلك لم تصلها قواعد الألوان السابقة
+   ============================================================ */
+.modal{backdrop-filter:blur(4px)}
+.modal-content{border:1px solid #e2e8f0;box-shadow:0 30px 70px rgba(15,23,42,.35);animation:bxpop .3s cubic-bezier(.34,1.56,.64,1) both}
+.modal-header{background:linear-gradient(120deg,#0f172a,#1e3a8a)!important}
+.modal-close{background:rgba(255,255,255,.14)!important;color:#fff!important;border:0!important;border-radius:10px!important;width:34px;height:34px;font-size:20px;line-height:1;cursor:pointer;transition:background .15s,transform .15s}
+.modal-close:hover{background:rgba(239,68,68,.85)!important;transform:rotate(90deg)}
+.column-option{border-radius:8px;padding:8px 10px!important;transition:background .15s}
+.column-option:hover{background:#eff6ff}
+.modal input[type=checkbox]{accent-color:#2563eb}
+.btn-primary,.btn-secondary{border-radius:12px!important;font-weight:700;transition:transform .15s,box-shadow .15s,filter .15s}
+.btn-primary{background:linear-gradient(135deg,#2563eb,#1e3a8a)!important;box-shadow:0 6px 16px rgba(37,99,235,.32)}
+.btn-secondary{background:linear-gradient(135deg,#64748b,#334155)!important;box-shadow:0 6px 16px rgba(51,65,85,.28)}
+.btn-primary:hover,.btn-secondary:hover{transform:translateY(-2px);filter:brightness(1.08)}
+
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] .modal{background:rgba(2,6,23,.72)}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] .modal-content{background:#0f1a2d!important;color:#e5edf7;border-color:#1f2b40;box-shadow:0 30px 70px rgba(0,0,0,.65)}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] .modal-header{background:linear-gradient(120deg,#0a1020,#1e3a8a)!important;color:#fff}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] .modal-body{color:#e5edf7}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] .modal-footer{background:#0b1626!important;border-top:1px solid #1f2b40}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] .column-option{border-bottom-color:#1f2b40!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] .column-option:hover{background:#13223a}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] .column-option label,html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] .select-all label,html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] .select-all strong{color:#e5edf7}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] .select-all{border-bottom-color:#3b82f6!important}
+html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] .modal-body::-webkit-scrollbar-thumb{background:#334155;border-radius:6px}
