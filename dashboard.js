@@ -139,17 +139,19 @@
             <div class="dv-card"><h3>📅 النشاط الشهري</h3>${vbars(d.byMonth)}</div>
             <div class="dv-card"><h3>🗂️ نوع الملفات</h3>${donut(d.byType, 'ملف')}</div>
         </div>
-		<div class="dv-grid g2">
-            <div class="dv-card"><h3>🚢 آخر سفينة${L ? ` <small dir="ltr">${esc(L.name)}</small>` : ''}</h3>
-                ${L ? `<ul class="dv-list">${L.files.map(f => row(f)).join('')}</ul>` : '<div class="dv-empty">لا توجد ملفات بعد</div>'}</div>
-            <div class="dv-card"><h3>🕘 آخر الملفات</h3>
-                ${d.recent.length ? `<ul class="dv-list">${d.recent.map(f => row(f, true)).join('')}</ul>` : '<div class="dv-empty">لا توجد ملفات</div>'}</div>
-        </div>
+
 		
         <div class="dv-grid g2">
             <div class="dv-card"><h3>☁️ حالة المصادر</h3>${donut([{ name: 'في المصدرين', value: s.both }, { name: 'محلي فقط', value: s.localOnly }, { name: 'GitHub فقط', value: s.ghOnly }].filter(i => i.value), 'ملف')}
                 <p class="dv-note">${st.local ? '' : '⚠️ الخادم المحلي غير متصل؛ تُعرض بيانات GitHub فقط. '}${st.gh ? '' : '⚠️ تعذّر قراءة فهرس GitHub. '}${s.localOnly ? `يوجد ${s.localOnly} ملف محلي غير مرفوع إلى GitHub (استخدم «مزامنة» من نافذة الأرشيف). ` : ''}${s.ghOnly ? `يوجد ${s.ghOnly} ملف على GitHub غير موجود محلياً.` : ''}</p></div>
             <div class="dv-card"><h3>🚢 أحدث السفن</h3><ul class="dv-list">${d.ships.slice(0, 6).map(sh => `<li><span class="nm">${esc(sh.name)}</span><span class="mt">${sh.files.length} ملف${sh.date ? ' · ' + fmtDate(sh.date) : ''}</span></li>`).join('') || '<li class="dv-empty">—</li>'}</ul></div>
+        </div>
+		
+				<div class="dv-grid g2">
+            <div class="dv-card"><h3>🚢 آخر سفينة${L ? ` <small dir="ltr">${esc(L.name)}</small>` : ''}</h3>
+                ${L ? `<ul class="dv-list">${L.files.map(f => row(f)).join('')}</ul>` : '<div class="dv-empty">لا توجد ملفات بعد</div>'}</div>
+            <div class="dv-card"><h3>🕘 آخر الملفات</h3>
+                ${d.recent.length ? `<ul class="dv-list">${d.recent.map(f => row(f, true)).join('')}</ul>` : '<div class="dv-empty">لا توجد ملفات</div>'}</div>
         </div>`;
     }
 
