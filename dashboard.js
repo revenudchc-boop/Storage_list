@@ -88,10 +88,13 @@
     window.DashboardUtil = { analyze };
 
     // ---------- جلب البيانات ----------
-    async function fetchGithubIndex() {
+    // fresh=true: رابط فريد يتجاوز ذاكرة GitHub المؤقتة (يُستعمل عند الفتح والتحديث اليدوي وبعد رفعك).
+    // fresh=false: طلب شرطي يعيد 304 بلا محتوى إن لم يتغير الفهرس (للفحص الدوري).
+    async function fetchGithubIndex(fresh = true) {
         try {
-            const url = `https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${GH_BRANCH}/archive/archive_index.json?t=${Date.now()}`;
-            const r = await fetch(url);
+            const url = `https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${GH_BRANCH}/archive/archive_index.json${fresh ? '?t=' + Date.now() : ''}`;
+            const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 8000);
+            const r = await fetch(url, fresh ? { signal: ctl.signal } : { signal: ctl.signal, cache: 'no-cache' }).finally(() => clearTimeout(tm));
             if (!r.ok) throw new Error('HTTP ' + r.status);
             const d = await r.json();
             return Array.isArray(d) ? d : d.folders || [];
@@ -139,15 +142,13 @@
             <div class="dv-card"><h3>📅 النشاط الشهري</h3>${vbars(d.byMonth)}</div>
             <div class="dv-card"><h3>🗂️ نوع الملفات</h3>${donut(d.byType, 'ملف')}</div>
         </div>
-
-		
         <div class="dv-grid g2">
             <div class="dv-card"><h3>☁️ حالة المصادر</h3>${donut([{ name: 'في المصدرين', value: s.both }, { name: 'محلي فقط', value: s.localOnly }, { name: 'GitHub فقط', value: s.ghOnly }].filter(i => i.value), 'ملف')}
-                <p class="dv-note">${st.local ? '' : '⚠️ الخادم المحلي غير متصل؛ تُعرض بيانات GitHub فقط. '}${st.gh ? '' : '⚠️ تعذّر قراءة فهرس GitHub. '}${s.localOnly ? `يوجد ${s.localOnly} ملف محلي غير مرفوع إلى GitHub (استخدم «مزامنة» من نافذة الأرشيف). ` : ''}${s.ghOnly ? `يوجد ${s.ghOnly} ملف على GitHub غير موجود محلياً.` : ''}</p></div>
+                <p class="dv-note">${st.local || !st.localDone ? '' : '⚠️ الخادم المحلي غير متصل؛ تُعرض بيانات GitHub فقط. '}${st.gh || !st.ghDone ? '' : '⚠️ تعذّر قراءة فهرس GitHub. '}${s.localOnly ? `يوجد ${s.localOnly} ملف محلي غير مرفوع إلى GitHub (استخدم «مزامنة» من نافذة الأرشيف). ` : ''}${s.ghOnly ? `يوجد ${s.ghOnly} ملف على GitHub غير موجود محلياً.` : ''}</p></div>
             <div class="dv-card"><h3>🚢 أحدث السفن</h3><ul class="dv-list">${d.ships.slice(0, 6).map(sh => `<li><span class="nm">${esc(sh.name)}</span><span class="mt">${sh.files.length} ملف${sh.date ? ' · ' + fmtDate(sh.date) : ''}</span></li>`).join('') || '<li class="dv-empty">—</li>'}</ul></div>
         </div>
 		
-				<div class="dv-grid g2">
+		        <div class="dv-grid g2">
             <div class="dv-card"><h3>🚢 آخر سفينة${L ? ` <small dir="ltr">${esc(L.name)}</small>` : ''}</h3>
                 ${L ? `<ul class="dv-list">${L.files.map(f => row(f)).join('')}</ul>` : '<div class="dv-empty">لا توجد ملفات بعد</div>'}</div>
             <div class="dv-card"><h3>🕘 آخر الملفات</h3>
@@ -155,16 +156,107 @@
         </div>`;
     }
 
+    // ---------- تحميل اللوحة + التحديث التلقائي ----------
+    // عرض فوري من آخر نسخة محفوظة ← تحديث المصدرين بالتوازي ← فحص دوري هادئ يكشف أي بيانات جديدة يضيفها أي مستخدم
+    let runId = 0, detectP = null, CUR = null, polling = false, lastPoll = 0, tick = 0;
+    const POLL_MS = 60000;                       // فحص كل دقيقة: GitHub شرطي (رخيص)، والمحلي كل دقيقتين لتخفيف الحمل على الـ NAS
+    const cacheKey = () => 'dashCache:' + ((typeof getCurrentUser === 'function' && (getCurrentUser() || {}).username) || '');
+    const slim = list => list && list.map(f => ({ name: f.name, files: (f.files || []).map(x => ({ name: x.name, size: x.size, modified: x.modified })) }));
+    const readCache = () => { try { return JSON.parse(localStorage.getItem(cacheKey()) || 'null'); } catch (e) { return null; } };
+    const writeCache = (local, gh) => { try { localStorage.setItem(cacheKey(), JSON.stringify({ t: Date.now(), local: slim(local), gh: slim(gh) })); } catch (e) { /* المساحة ممتلئة */ } };
+
+    // بصمة المحتوى: تتغير عند إضافة/حذف/تعديل أي ملف، فنعرف أن هناك جديداً دون مقارنة ثقيلة
+    const keysOf = (l, g) => { const k = new Set(); [l, g].forEach(list => (list || []).forEach(f => (f.files || []).forEach(x => { if (x.name !== '_info.json' && canSee(x.name)) k.add(f.name + '/' + x.name + ':' + (x.size || 0)); }))); return k; };
+    const sigOf = (l, g) => { const str = [...keysOf(l, g)].sort().join('|'); let h = 0; for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0; return str.length + ':' + h; };
+    window.DashboardUtil.sigOf = sigOf;
+
+    function toast(msg) {
+        let t = document.getElementById('dvToast');
+        if (!t) { t = document.createElement('div'); t.id = 'dvToast'; document.body.appendChild(t); }
+        t.textContent = msg; t.classList.add('show');
+        clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 7000);
+    }
+
+    function paintState(S) {
+        const body = $('#dvBody'), pill = (label, done, ok) => `<span class="dv-pill ${done && ok ? 'ok' : 'bad'}">${label} ${!done ? 'جاري الفحص…' : ok ? 'متصل' : 'غير متصل'}</span>`;
+        if (!body) return;
+        $('#dvStatus').innerHTML = pill('🖥️ المحلي', S.localDone, !!S.local) + pill('☁️ GitHub', S.ghDone, !!S.gh)
+            + (S.localDone && S.ghDone ? '' : '<span class="dv-pill bad">⏳ جاري التحديث</span>');
+        if (!S.local && !S.gh) {
+            body.innerHTML = S.localDone && S.ghDone
+                ? '<div class="dv-empty big">لا يمكن الوصول إلى أي مصدر للأرشيف حالياً.<br>تحقق من الخادم المحلي أو الاتصال بالإنترنت ثم اضغط «تحديث».</div>'
+                : '<div class="dv-skel"></div><div class="dv-skel"></div>';
+            return;
+        }
+        try { render(analyze(S.local, S.gh), { local: !!S.local, gh: !!S.gh, localDone: S.localDone, ghDone: S.ghDone }); }
+        catch (e) { body.innerHTML = `<div class="dv-empty big">❌ ${esc(e.message)}</div>`; }
+    }
+
     async function loadDash() {
-        const body = $('#dvBody');
-        body.innerHTML = '<div class="dv-skel"></div><div class="dv-skel"></div>';
-        const up = await detectLocalServer().catch(() => false);
-        const [lr, gr] = await Promise.allSettled([up ? loadLocalArchiveFolders() : Promise.resolve(null), fetchGithubIndex()]);
-        const local = lr.status === 'fulfilled' ? lr.value : null, gh = gr.status === 'fulfilled' ? gr.value : null;
-        const st = { local: !!local, gh: !!gh };
-        $('#dvStatus').innerHTML = `<span class="dv-pill ${st.local ? 'ok' : 'bad'}">🖥️ المحلي ${st.local ? 'متصل' : 'غير متصل'}</span><span class="dv-pill ${st.gh ? 'ok' : 'bad'}">☁️ GitHub ${st.gh ? 'متصل' : 'غير متاح'}</span>`;
-        if (!st.local && !st.gh) { body.innerHTML = '<div class="dv-empty big">لا يمكن الوصول إلى أي مصدر للأرشيف حالياً.<br>تحقق من الخادم المحلي أو الاتصال بالإنترنت ثم اضغط «تحديث».</div>'; return; }
-        try { render(analyze(local, gh), st); } catch (e) { body.innerHTML = `<div class="dv-empty big">❌ ${esc(e.message)}</div>`; }
+        const my = ++runId;
+        const cache = readCache();
+        const S = { local: cache ? cache.local : null, gh: cache ? cache.gh : null, localDone: false, ghDone: false };
+        const paint = () => { if (my === runId) paintState(S); };      // تجاهل نتيجة تحديث أقدم
+        paint();                                                        // آخر نسخة محفوظة تظهر فوراً إن وُجدت
+
+        const localJob = (async () => {
+            try {
+                let up = typeof _localServerAvailable !== 'undefined' && _localServerAvailable;   // لا نعيد الكشف إن كان معروفاً
+                if (!up) up = await (detectP || (detectP = Promise.resolve(detectLocalServer()).catch(() => false).finally(() => { detectP = null; })));
+                S.local = up ? await loadLocalArchiveFolders() : null;
+            } catch (e) { S.local = null; }
+            S.localDone = true; paint();
+        })();
+        const ghJob = fetchGithubIndex().then(g => { S.gh = g; }).catch(() => { S.gh = null; }).then(() => { S.ghDone = true; paint(); });
+
+        await Promise.allSettled([localJob, ghJob]);
+        if (my === runId) {
+            CUR = S; CUR.sig = sigOf(S.local, S.gh); CUR.keys = keysOf(S.local, S.gh);
+            if (S.local || S.gh) writeCache(S.local, S.gh);
+        }
+    }
+
+    // فحص هادئ في الخلفية: لا يغيّر الشاشة إلا إذا تغيّرت البيانات فعلاً، ولا يستبدل بيانات سليمة بنتيجة فاشلة
+    async function pollNow(force, fresh) {
+        const dash = document.getElementById('dashView');
+        if (polling || !CUR || !dash || document.hidden || !document.body.classList.contains('dash-mode')) return;
+        polling = true; lastPoll = Date.now(); tick++;
+        try {
+            const doLocal = force || tick % 2 === 0;
+            const [lr, gr] = await Promise.allSettled([
+                doLocal && typeof _localServerAvailable !== 'undefined' && _localServerAvailable ? loadLocalArchiveFolders() : Promise.resolve(null),
+                fetchGithubIndex(!!fresh)
+            ]);
+            const l = lr.status === 'fulfilled' && lr.value ? lr.value : CUR.local;
+            const g = gr.status === 'fulfilled' && gr.value ? gr.value : CUR.gh;
+            const sig = sigOf(l, g);
+            if (sig === CUR.sig) return;
+            const keys = keysOf(l, g);
+            const added = [...keys].filter(k => !CUR.keys.has(k));
+            CUR = Object.assign(CUR, { local: l, gh: g, localDone: true, ghDone: true, sig, keys });
+            paintState(CUR);
+            writeCache(l, g);
+            if (added.length) toast(`🔔 تمت إضافة ${added.length} ملف جديد — ${added[0].split('/')[0]}`);
+            else toast('🔄 تم تحديث بيانات الأرشيف');
+        } catch (e) { /* نحاول في الدورة التالية */ }
+        finally { polling = false; }
+    }
+
+    function startPolling() {
+        setInterval(() => pollNow(false), POLL_MS);
+        document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - lastPoll > 8000) pollNow(true); });
+        window.addEventListener('focus', () => { if (Date.now() - lastPoll > 8000) pollNow(true); });
+        // تحديث فوري عندما يرفع هذا المستخدم أو يحذف في الأرشيف المحلي (تمرير كامل للدالة الأصلية دون تغيير نتيجتها)
+        ['uploadToLocalServer', 'deleteFromLocalServer'].forEach(n => {
+            const orig = window[n];
+            if (typeof orig !== 'function' || orig.__dash) return;
+            const wrapped = async function () {
+                const r = await orig.apply(this, arguments);
+                try { if (r && r.success) setTimeout(() => pollNow(true, true), 1000); } catch (e) { /* ignore */ }
+                return r;
+            };
+            wrapped.__dash = true; window[n] = wrapped;
+        });
     }
 
     // ---------- تلوين كل الأزرار بتدرجات مختلفة (ثابتة لكل زر حسب نصه وموضعه) ----------
@@ -308,6 +400,8 @@
         $('#dvRefresh').onclick = loadDash;
         loadDash();
     }
+
+    startPolling();
 
     const timer = setInterval(() => {
         const app = document.getElementById('appContainer');
