@@ -520,3 +520,22 @@ html[data-theme=dark][data-theme=dark][data-theme=dark][data-theme=dark] .modal-
 #dvToast{position:fixed;bottom:22px;left:50%;transform:translate(-50%,30px);opacity:0;pointer-events:none;z-index:9400;background:linear-gradient(135deg,#0f172a,#1e3a8a);color:#fff;padding:12px 24px;border-radius:30px;font-weight:700;font-size:14px;box-shadow:0 14px 34px rgba(2,6,23,.4);transition:opacity .35s,transform .35s cubic-bezier(.34,1.56,.64,1);max-width:90vw;text-align:center}
 #dvToast.show{opacity:1;transform:translate(-50%,0)}
 @media print{#dvToast{display:none!important}}
+
+/* إصلاح جذري لتقطيع الحروف العربية في الجداول */
+table th, 
+table th *,
+.col-sub-header,
+.col-sub-header-small {
+    letter-spacing: normal !important;
+    direction: rtl !important;
+    unicode-bidi: plaintext !important;
+    text-align: center !important;
+    word-spacing: normal !important;
+}
+
+/* الحفاظ على الأرقام من اليسار لليمين */
+table td {
+    letter-spacing: normal !important;
+    direction: ltr !important;
+    unicode-bidi: embed !important;
+}
