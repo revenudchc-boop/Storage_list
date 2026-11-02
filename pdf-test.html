@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>اختبار PDF النصي</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="pdf-text.js"></script>
+<style>body{font-family:Segoe UI,Tahoma,sans-serif;max-width:720px;margin:40px auto;padding:0 16px;line-height:1.8}
+button{background:#0a3d62;color:#fff;border:0;border-radius:10px;padding:12px 26px;font-size:16px;font-weight:bold;cursor:pointer}
+#log{margin-top:16px;padding:12px;border-radius:10px;background:#f1f5f9;white-space:pre-wrap;font-size:14px}</style></head><body>
+<h2>🧪 اختبار PDF النصي ببيانات تجريبية</h2>
+<p>يتحقق من أن العربية والجداول والبطاقات والألوان تعمل في متصفحك، دون الحاجة لفتح البرنامج.</p>
+<button onclick="run()">📄 إنشاء PDF تجريبي وتنزيله</button><div id="log">جاهز.</div>
+<script>
+const log=m=>document.getElementById('log').textContent=m;
+const C=(t,bg,bold,color,badge)=>{const c=PdfText.classify(t);return{k:c.k,t:c.t,bg:bg||null,color:color||null,bold:!!bold,badge:badge||null};};
+const cards='<div style="flex:1;background:linear-gradient(135deg,#43e97b,#38f9d7);border-radius:12px;padding:15px;text-align:center;color:white;"><div style="font-size:14px;">📦 إجمالي الحاويات</div><div style="font-size:28px;font-weight:bold;">60</div><div style="font-size:12px;">حاوية فريدة</div><div style="margin-top:12px;border-top:1px solid rgba(255,255,255,0.3);font-size:12px;"><div>📦 20 قدم: 4</div><div>📦 40 قدم: 56</div></div></div>'
+ +'<div style="flex:1;background:linear-gradient(135deg,#f093fb,#f5576c);border-radius:12px;padding:15px;text-align:center;color:white;"><div style="font-size:14px;">📤 إجمالي EXPRT (بعد الخصم)</div><div style="font-size:28px;font-weight:bold;">188</div><div style="font-size:12px;">صافي أيام التصدير</div></div>';
+async function run(){
+  try{
+    const heads=['رقم الحاوية','الحجم','OOG','ثلاجه','خطر','طريقة الحساب','Flex String 01','EXPRT أيام','Total Net','Vessel Name'].map(PdfText.classify);
+    const rows=[];
+    for(let i=0;i<60;i++) rows.push([C('ZIMU'+(1000000+i*137),null,true),C('45'),C('❌'),C(i%3?'✅':'❌'),C('❌'),
+      C(i%2?'بعد الخصم':'🚫 سماح مستقل',null,false,null,i%2?{bg:[209,236,241],color:[12,84,96]}:{bg:[248,215,218],color:[114,28,36]}),
+      i%5?C('—'):C('⭐ خاص',null,false,null,{bg:[255,107,107],color:[255,255,255]}),
+      C(String(3+i%6),[227,242,253]),C(String(i%12+3),[204,229,255],true),C('MARLA TIGER')]);
+    const tab={id:'tab3',title:'EXPRT فقط',heads,rows,statsHtml:cards,extra:null};
+    const t0=performance.now();
+    const doc=await PdfText.buildDocument([tab,Object.assign({},tab,{id:'tab8',title:'Storage Finalout',statsHtml:'',extra:{orderNumber:'A-1025',lineOp:'MSC',count:'60'}})],{carrier:'MSC JADE',shipDate:'2026-10-24',lineId:'ZIM'});
+    const kb=Math.round(doc.output('arraybuffer').byteLength/1024);
+    doc.save('اختبار-pdf-نصي.pdf');
+    log('✅ تم الإنشاء في '+Math.round(performance.now()-t0)+' مللي ثانية\nالحجم: '+kb+' KB — '+doc.getNumberOfPages()+' صفحة\nتأكد من: العربية متصلة، البطاقات الملونة، الألوان والشارات، تكرار الترويسة، التوقيعات في آخر صفحة.');
+  }catch(e){log('❌ فشل: '+e.message+'\n(هذا هو السبب الذي سيجعل البرنامج يعود للطريقة الصورية)');console.error(e)}
+}
+</script></body></html>

@@ -12015,6 +12015,16 @@ async function autoGenerateAndArchiveFullPDF() {
     let headerCarrierName = document.getElementById("headerCarrierName")?.innerText || "—";
     let headerShippingDate = document.getElementById("headerShippingDate")?.innerText || "—";
     let headerLineId = document.getElementById("headerLineId")?.innerText || "—";
+    // 🆕 PDF نصي (أصغر حجماً وقابل للبحث، ويحترم اختيار الأعمدة) — مُعرَّف في pdf-text.js.
+    //    عند أي فشل نعود تلقائياً للطريقة الصورية أدناه. للإجبار على القديمة: localStorage.setItem("pdfMode","image")
+    if (typeof window.generateTextPDFReport === "function" && localStorage.getItem("pdfMode") !== "image") {
+        try {
+            const doneText = await window.generateTextPDFReport({ tabsToPrint, folderName, fileName, headerCarrierName, headerShippingDate, headerLineId });
+            if (doneText) return;
+        } catch (textPdfErr) {
+            console.warn("⚠️ فشل PDF النصي، سيتم استخدام الطريقة الصورية:", textPdfErr);
+        }
+    }
 
     let loading = document.createElement('div');
     loading.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#0a3d62;color:white;padding:15px 30px;border-radius:8px;z-index:10000;font-weight:bold;box-shadow:0 10px 25px rgba(0,0,0,0.3);';
