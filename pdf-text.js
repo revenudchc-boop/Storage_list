@@ -508,15 +508,45 @@
         }
     }
 
-    // زر صغير لتبديل لغة التقرير (English / العربية)
+    // زر صغير لتبديل لغة التقرير (English / العربية): قابل للسحب لأي مكان، ويُحفظ موضعه
+    // نقرة = تبديل اللغة | سحب = نقل | نقرتان = إرجاعه لمكانه الافتراضي (أعلى يسار الشاشة)
     function addLangChip() {
         if (document.getElementById('pdfLangChip') || !document.body) return;
-        const b = document.createElement('div');
+        const KEY = 'pdfLangPos', b = document.createElement('div');
         b.id = 'pdfLangChip'; b.setAttribute('role', 'button');
-        b.style.cssText = 'position:fixed;bottom:15px;right:15px;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:bold;z-index:9997;background:#0a3d62;color:#fff;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.2);direction:ltr';
-        const paint = () => { b.textContent = '📄 PDF: ' + (getLang() === 'en' ? 'English' : 'العربية'); b.title = 'تبديل لغة تقرير PDF'; };
-        b.onclick = () => { const n = getLang() === 'en' ? 'ar' : 'en'; window.PDF_LANG = n; try { localStorage.setItem('pdfLang', n); } catch (e) { /* ignore */ } paint(); };
+        b.style.cssText = 'position:fixed;top:12px;left:12px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:bold;z-index:9997;background:#0a3d62;color:#fff;cursor:grab;box-shadow:0 2px 8px rgba(0,0,0,.25);direction:ltr;user-select:none;touch-action:none;opacity:.92';
+        const paint = () => { b.textContent = '📄 PDF: ' + (getLang() === 'en' ? 'English' : 'العربية'); b.title = 'نقرة: تبديل لغة PDF • اسحب لنقله • نقرتان: إرجاعه'; };
+        const place = (x, y) => {
+            const w = b.offsetWidth || 120, h = b.offsetHeight || 28;
+            x = Math.max(0, Math.min(innerWidth - w, x)); y = Math.max(0, Math.min(innerHeight - h, y));
+            b.style.left = x + 'px'; b.style.top = y + 'px'; b.style.right = 'auto'; b.style.bottom = 'auto';
+            return [x, y];
+        };
         paint(); document.body.appendChild(b);
+        try { const sv = JSON.parse(localStorage.getItem(KEY) || 'null'); if (sv) place(sv[0], sv[1]); } catch (e) { /* ignore */ }
+        let drag = null;
+        b.addEventListener('pointerdown', e => {
+            const r = b.getBoundingClientRect();
+            drag = { dx: e.clientX - r.left, dy: e.clientY - r.top, sx: e.clientX, sy: e.clientY, moved: false };
+            try { b.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ }
+        });
+        b.addEventListener('pointermove', e => {
+            if (!drag) return;
+            if (Math.abs(e.clientX - drag.sx) + Math.abs(e.clientY - drag.sy) > 5) { drag.moved = true; b.style.cursor = 'grabbing'; }
+            if (drag.moved) place(e.clientX - drag.dx, e.clientY - drag.dy);
+        });
+        b.addEventListener('pointerup', () => {
+            if (!drag) return;
+            b.style.cursor = 'grab';
+            if (drag.moved) { const r = b.getBoundingClientRect(); try { localStorage.setItem(KEY, JSON.stringify([r.left, r.top])); } catch (e) { /* ignore */ } }
+            else { const n = getLang() === 'en' ? 'ar' : 'en'; window.PDF_LANG = n; try { localStorage.setItem('pdfLang', n); } catch (e) { /* ignore */ } paint(); }
+            drag = null;
+        });
+        b.addEventListener('dblclick', () => {
+            try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
+            b.style.top = '12px'; b.style.left = '12px';
+        });
+        window.addEventListener('resize', () => { const r = b.getBoundingClientRect(); place(r.left, r.top); });
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', addLangChip); else addLangChip();
 
