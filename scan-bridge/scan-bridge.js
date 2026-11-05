@@ -12,7 +12,7 @@ const VERSION = '1.2', PORT = +process.env.SCAN_BRIDGE_PORT || 17890, HOST = '12
 const CFG_FILE = path.join(__dirname, 'scan-bridge.json');
 const DEFAULT_CFG = {
     // المواقع المسموح لها باستخدام السكانر (الصفحة التي تفتح منها البرنامج)
-    allowedOrigins: ['https://markingdchc.github.io', 'https://revenudchc-boop.github.io/' 'http://localhost:3000', 'http://127.0.0.1:3000'],
+    allowedOrigins: ['https://markingdchc.github.io', 'https://revenudchc-boop.github.io', 'http://localhost:3000', 'http://127.0.0.1:3000'],
     naps2Path: ''            // اتركه فارغاً للبحث التلقائي
 };
 let cfg = { ...DEFAULT_CFG };
