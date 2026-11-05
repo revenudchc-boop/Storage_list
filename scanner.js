@@ -201,7 +201,7 @@
                 const j = await qGet(id); if (!j) { await qDel(id); continue; }
                 if (!manual && j.tries >= 5) continue;
                 let r = null; try { r = await uploadBase64ToArchive(j.folder, j.name, j.b64); } catch (e) { r = null; }
-                if (r && r.success) { await qDel(id); res.ok++; if (!res.folders.includes(j.folder)) res.folders.push(j.folder); if (j.entry) await appendScanLog(j.folder, j.entry); }
+                if (r && r.success) { await qDel(id); res.ok++; if (!res.folders.includes(j.folder)) res.folders.push(j.folder); if (j.entry) await appendScanLog(j.folder, j.entry, j.idx ? { [j.name]: j.idx } : null); }
                 else { j.tries = (j.tries || 0) + 1; await kvSet('q:' + id, j); res.fail++; }
             }
         } finally { flushing = false; }
@@ -215,6 +215,25 @@
         const out = [], q = folders.slice(); let i = 0;
         const worker = async () => { while (q.length) { const f = q.shift(); try { const info = await ghInfo(f); ((info && info.scanLog) || []).forEach(e => out.push({ ...e, folder: f })); } catch (e) { } if (onProgress) onProgress(++i, folders.length); } };
         await Promise.all([worker(), worker(), worker()]); return out;
+    }
+    // ---------- فهرس نص المستندات (للبحث بالمحتوى) ----------
+    const compactText = (t) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, 3500);
+    // يجلب textIndex لكل مجلد (raw من GitHub، وإن تعذّر فبالرمز) ويخزّنه مؤقتاً 10 دقائق في IndexedDB
+    async function loadTextIndex(folders, onProgress, force) {
+        const cache = await kvGet('tidx');
+        if (!force && cache && Date.now() - cache.t < 600000 && folders.every(f => f in cache.data)) return cache.data;
+        const data = { ...((cache && cache.data) || {}) }, q = folders.slice(); let i = 0;
+        const base = (typeof GH_OWNER !== 'undefined') ? 'https://raw.githubusercontent.com/' + GH_OWNER + '/' + GH_REPO + '/' + GH_BRANCH + '/' + ARCHIVE_FOLDER + '/' : null;
+        const worker = async () => {
+            while (q.length) {
+                const f = q.shift(); let info = null;
+                try { if (base) { const r = await fetch(base + encodeURIComponent(f) + '/_info.json?t=' + Date.now()); if (r.ok) info = await r.json(); else if (r.status !== 404 && store.get('github_token', '')) info = await ghInfo(f); } } catch (e) { try { info = await ghInfo(f); } catch (x) { } }
+                data[f] = (info && info.textIndex) || {};
+                if (onProgress) onProgress(++i, folders.length);
+            }
+        };
+        await Promise.all([worker(), worker(), worker(), worker()]);
+        await kvSet('tidx', { t: Date.now(), data }); return data;
     }
     // ISO 6346
     function isoValid(code) {
@@ -258,11 +277,14 @@
         if (!r.ok) return null; const d = await r.json();
         try { return JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\n/g, ''))))); } catch (e) { return null; }
     }
-    async function appendScanLog(folder, entry) {
+    // idxPatch: { 'file.pdf': 'نص مفهرس' } يُدمج في textIndex داخل _info.json (للبحث بمحتوى المستندات)
+    async function appendScanLog(folder, entry, idxPatch) {
         try {
             if (!store.get('github_token', '') || typeof updateArchiveInfo !== 'function') return;
             const info = await ghInfo(folder), log = (info && info.scanLog) || []; log.unshift(entry);
-            await updateArchiveInfo(folder, { scanLog: log.slice(0, 200) });
+            const patch = { scanLog: log.slice(0, 200) };
+            if (idxPatch) patch.textIndex = { ...((info && info.textIndex) || {}), ...idxPatch };
+            await updateArchiveInfo(folder, patch);
         } catch (e) { console.warn('scanLog:', e); }
     }
     const verCmp = (a, b) => { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); } return 0; };
@@ -582,14 +604,27 @@
                 if (warns.length) msgs.push('⚠️ احتمال تكرار:\n' + warns.join('\n'));
                 if (msgs.length && !win.confirm(msgs.join('\n\n') + '\n\nمتابعة الحفظ؟')) { btn.disabled = false; btn.textContent = '💾 حفظ في الأرشيف'; return; }
                 const searchable = $('#sc-optsearch').checked, jobs = [];
-                for (let k = 0; k < gs.length; k++) { btn.textContent = '⏳ تجهيز ' + (k + 1) + ' من ' + gs.length + '…'; const g = gs[k]; jobs.push({ name: names[k], g, b64: g.kind === 'pdf' ? g.pages[0].base64 : await buildSmart(g.pages, searchable) }); }
+                const doIndex = optOn('#sc-optindex'); let indexFail = false;
+                for (let k = 0; k < gs.length; k++) {
+                    btn.textContent = '⏳ تجهيز ' + (k + 1) + ' من ' + gs.length + '…'; const g = gs[k];
+                    let idxText = '';
+                    if (doIndex && g.kind === 'img' && !indexFail) {
+                        try {
+                            const txt = [];
+                            for (const p of g.pages.slice(0, 6)) { btn.textContent = '⏳ فهرسة النص… (' + (k + 1) + ' من ' + gs.length + ')'; if (!p.ocr || p.ocr.for !== p.dataUrl) p.ocr = await ocrImage(p.dataUrl); txt.push(p.ocr.text); }
+                            const all = txt.join(' '); idxText = compactText(all + ' ' + detectContainers(all).map(c => c.code).join(' '));
+                        } catch (e) { indexFail = true; lastErr = 'index: ' + e.message; }
+                    }
+                    jobs.push({ name: names[k], g, idxText, b64: g.kind === 'pdf' ? g.pages[0].base64 : await buildSmart(g.pages, searchable) });
+                }
+                if (indexFail) toast('⚠️ تعذّرت فهرسة النص (محرك القراءة غير متاح) — سيُحفظ الملف بدون فهرسة', true);
                 btn.textContent = '⏳ رفع إلى الأرشيف…';
                 const srcs = Array.from(new Set(pages.map(p => p.src).filter(Boolean))).join(' + ') || '—', who = (window.getCurrentUser && (getCurrentUser() || {}).fullName) || '—', selType = $('#sc-type').value;
                 for (const j of jobs) {
                     const entry = { t: t0, user: who, files: [j.name], pages: j.g.pages.length, type: selType === '__auto' ? (j.g.type || '') : selType, source: srcs, searchable: !!searchable, cont: j.g.cont || '', hashes: j.g.hash ? [{ n: j.name, h: j.g.hash, t: t0 }] : [] };
                     let r = null; if (navigator.onLine !== false) { try { r = await uploadBase64ToArchive(folder, j.name, j.b64); } catch (e) { r = null; } }
-                    if (r && r.success) { ok++; saved.push(j.name); await appendScanLog(folder, entry); }
-                    else { try { await qAdd({ folder, name: j.name, b64: j.b64, entry }); queued++; } catch (e) { fail++; lastErr = 'queue: ' + e.message; } }
+                    if (r && r.success) { ok++; saved.push(j.name); await appendScanLog(folder, entry, j.idxText ? { [j.name]: j.idxText } : null); }
+                    else { try { await qAdd({ folder, name: j.name, b64: j.b64, entry, idx: j.idxText || '' }); queued++; } catch (e) { fail++; lastErr = 'queue: ' + e.message; } }
                     if (j.g.hash) hashes.push({ n: j.name, h: j.g.hash, t: t0 });
                 }
                 await hashAdd(folder, hashes);
@@ -738,10 +773,10 @@
 .sc-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;background:linear-gradient(135deg,#0a3d62,#1e6fa8);color:#fff}
 .sc-ttl{display:flex;align-items:center;gap:12px}.sc-ico{font-size:24px;background:#ffffff26;border-radius:12px;width:44px;height:44px;display:flex;align-items:center;justify-content:center}
 .sc-head h3{margin:0;font-size:17px}.sc-sub{margin:3px 0 0;font-size:12.5px;opacity:.9}.sc-chip{display:inline-block;background:#ffffff2e;border-radius:999px;padding:2px 10px;direction:ltr;font-weight:700}
-.sc-hbtns{display:flex;gap:8px;align-items:center}.sc-hb{border:0;background:#ffffff26;color:#fff;border-radius:999px;padding:7px 13px;font:700 12.5px Tahoma,sans-serif;cursor:pointer}.sc-hb:hover{background:#ffffff44}
+.sc-hbtns{display:flex;gap:8px;align-items:center}.sc-hb{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;border:0;background:#ffffff26;color:#fff;border-radius:999px;padding:7px 13px;font:700 12.5px Tahoma,sans-serif;cursor:pointer}.sc-hb:hover{background:#ffffff44}
 .sc-x{border:0;background:#ffffff26;color:#fff;width:34px;height:34px;border-radius:50%;font-size:16px;cursor:pointer}.sc-x:hover{background:#ffffff44}
-.sc-tabs{display:flex;gap:6px;padding:10px 16px 0;background:var(--bg2);border-bottom:1px solid var(--bd);overflow-x:auto}
-.sc-tabs button{border:0;background:transparent;color:var(--mu);padding:10px 16px;font:700 13.5px Tahoma,sans-serif;cursor:pointer;border-radius:10px 10px 0 0;white-space:nowrap;border-bottom:3px solid transparent}.sc-tabs button:hover{color:var(--tx)}.sc-tabs button.on{color:var(--pri);background:var(--bg);border-bottom-color:var(--pri)}
+.sc-head,.sc-tabs,.sc-foot{flex:0 0 auto}.sc-tabs{display:flex;gap:6px;padding:10px 16px 0;background:var(--bg2);border-bottom:1px solid var(--bd);overflow:hidden}
+.sc-tabs button{flex:1 1 0;min-width:0;display:inline-flex;align-items:center;justify-content:center;gap:7px;border:0;background:transparent;color:var(--mu);padding:10px 8px;font:700 13.5px Tahoma,sans-serif;cursor:pointer;border-radius:10px 10px 0 0;white-space:nowrap;border-bottom:3px solid transparent}.sc-tabs button i{font-style:normal;font-size:16px;line-height:1;flex:0 0 auto}.sc-tabs button span{overflow:hidden;text-overflow:ellipsis;min-width:0}@media(max-width:620px){.sc-tabs{padding:8px 8px 0;gap:3px}.sc-tabs button{flex-direction:column;gap:2px;padding:7px 2px;font-size:11.5px}.sc-tabs button i{font-size:18px}.sc-hbtns{flex-wrap:wrap;justify-content:flex-end}}.sc-tabs button:hover{color:var(--tx)}.sc-tabs button.on{color:var(--pri);background:var(--bg);border-bottom-color:var(--pri)}
 .sc-body{padding:18px 20px;overflow:auto;flex:1}
 .sc-pane{background:var(--bg2);border:1px solid var(--bd);border-radius:14px;padding:16px;margin-bottom:18px}
 .sc-status{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;font-weight:700;font-size:13.5px}
@@ -793,7 +828,7 @@
             root.innerHTML = `<div id="sc-box">
  <div class="sc-head"><div class="sc-ttl"><div class="sc-ico">📠</div><div><h3>مسح مستند</h3><p class="sc-sub">سيُحفظ داخل مجلد الأرشيف: <span class="sc-chip">${esc(opts.folder)}</span></p></div></div>
   <div class="sc-hbtns"><button class="sc-hb" id="sc-hq" hidden>📤 معلّقة (0)</button><button class="sc-hb" id="sc-hlog">📜 سجل المسح</button><button class="sc-hb" id="sc-hdiag">🩺 تشخيص</button><button class="sc-x" id="sc-close" title="إغلاق">✕</button></div></div>
- <div class="sc-tabs"><button data-tab="scan" class="on">🖨️ السكانر</button><button data-tab="folder">📁 مجلد المسح</button><button data-tab="cam">📷 الكاميرا</button><button data-tab="file">📤 رفع ملفات</button></div>
+ <div class="sc-tabs"><button data-tab="scan" class="on"><i>🖨️</i><span>السكانر</span></button><button data-tab="folder"><i>📁</i><span>مجلد المسح</span></button><button data-tab="cam"><i>📷</i><span>الكاميرا</span></button><button data-tab="file"><i>📤</i><span>رفع ملفات</span></button></div>
  <div class="sc-body">
   <div class="sc-prof"><label class="sc-f" style="flex:1;margin:0">ملف إعدادات جاهز<select id="sc-prof"></select></label><button class="sc-ghost" id="sc-profsave" title="يحفظ الدقة واللون ومصدر الورق وكل الخيارات الحالية باسم تختاره">💾 حفظ الإعدادات الحالية</button><button class="sc-ghost" id="sc-profdel" title="حذف الملف المحدد (الملفات الجاهزة لا تُحذف)">🗑</button></div>
   <div class="sc-pane" data-pane="scan">
@@ -820,7 +855,7 @@
    <div class="sc-drop" id="sc-drop"><div class="big">📤</div><p>اسحب الصور أو ملفات PDF وأفلتها هنا</p><button class="sc-primary" id="sc-up" style="padding:10px 18px;font-size:14px">اختيار ملفات</button><input type="file" id="sc-file" multiple accept="image/*,.pdf" hidden></div>
   </div>
   <div class="sc-ph"><h4>الصفحات <span class="sc-badge" id="sc-count">0</span></h4><button class="sc-ghost" id="sc-ocr" disabled title="يقرأ الصفحة الأولى ويقترح رقم الحاوية">🔎 قراءة رقم الحاوية (OCR)</button><button class="sc-ghost sc-sp" id="sc-clear" disabled>🗑 مسح الكل</button></div>
-  <div class="sc-opts"><label class="sc-chk"><input type="checkbox" id="sc-optblank"> حذف الصفحات الفارغة تلقائياً</label><label class="sc-chk" title="يقدّر ميل كل صفحة ويعدّلها فور استلامها"><input type="checkbox" id="sc-optdeskew"> تصحيح الميل تلقائياً</label><label class="sc-chk" title="يقص الحواف الداكنة وظل غطاء السكانر حول الورقة فور استلام كل صفحة"><input type="checkbox" id="sc-optedges"> حذف الحواف الخارجية تلقائياً</label><label class="sc-chk" title="يعادل الإضاءة ويزيل الظلال والخلفية الرمادية والنقاط وثقوب الدباسة (قد يبطئ المعالجة قليلاً)"><input type="checkbox" id="sc-optclean"> تحسين الجودة (ظلال/نقاط/ثقوب)</label><label class="sc-chk" title="الورقة الفارغة أو تغيّر رقم الحاوية يبدأ مستنداً جديداً، فيُحفظ كل مستند في ملف مستقل"><input type="checkbox" id="sc-optsplit"> فصل المستندات تلقائياً (ورقة فاصلة / رقم حاوية)</label><label class="sc-chk" title="يقرأ كل صفحة ويسمّي الملف برقم الحاوية الصحيح (ISO 6346)"><input type="checkbox" id="sc-optauto"> تسمية ذكية برقم الحاوية</label><label class="sc-chk" title="بعد كل مسح يسألك عن دفعة تالية فتمسح المستندات واحداً بعد الآخر"><input type="checkbox" id="sc-optcont"> مسح متواصل</label><label class="sc-chk"><input type="checkbox" id="sc-optocr"> قراءة رقم الحاوية تلقائياً بعد المسح</label><label class="sc-chk" title="يضيف نصاً مخفياً (إنجليزي وأرقام) للبحث داخل الملف — أبطأ في الحفظ"><input type="checkbox" id="sc-optsearch"> PDF قابل للبحث (إنجليزي/أرقام)</label></div>
+  <div class="sc-opts"><label class="sc-chk"><input type="checkbox" id="sc-optblank"> حذف الصفحات الفارغة تلقائياً</label><label class="sc-chk" title="يقدّر ميل كل صفحة ويعدّلها فور استلامها"><input type="checkbox" id="sc-optdeskew"> تصحيح الميل تلقائياً</label><label class="sc-chk" title="يقص الحواف الداكنة وظل غطاء السكانر حول الورقة فور استلام كل صفحة"><input type="checkbox" id="sc-optedges"> حذف الحواف الخارجية تلقائياً</label><label class="sc-chk" title="يعادل الإضاءة ويزيل الظلال والخلفية الرمادية والنقاط وثقوب الدباسة (قد يبطئ المعالجة قليلاً)"><input type="checkbox" id="sc-optclean"> تحسين الجودة (ظلال/نقاط/ثقوب)</label><label class="sc-chk" title="الورقة الفارغة أو تغيّر رقم الحاوية يبدأ مستنداً جديداً، فيُحفظ كل مستند في ملف مستقل"><input type="checkbox" id="sc-optsplit"> فصل المستندات تلقائياً (ورقة فاصلة / رقم حاوية)</label><label class="sc-chk" title="يقرأ كل صفحة ويسمّي الملف برقم الحاوية الصحيح (ISO 6346)"><input type="checkbox" id="sc-optauto"> تسمية ذكية برقم الحاوية</label><label class="sc-chk" title="بعد كل مسح يسألك عن دفعة تالية فتمسح المستندات واحداً بعد الآخر"><input type="checkbox" id="sc-optcont"> مسح متواصل</label><label class="sc-chk"><input type="checkbox" id="sc-optocr"> قراءة رقم الحاوية تلقائياً بعد المسح</label><label class="sc-chk" title="يقرأ نص كل مستند (OCR) ويحفظه في سجل المجلد ليمكن البحث بمحتوى المستند من شاشة الأرشيف — يبطئ الحفظ"><input type="checkbox" id="sc-optindex"> فهرسة النص للبحث بالمحتوى</label><label class="sc-chk" title="يضيف نصاً مخفياً (إنجليزي وأرقام) للبحث داخل الملف — أبطأ في الحفظ"><input type="checkbox" id="sc-optsearch"> PDF قابل للبحث (إنجليزي/أرقام)</label></div>
   <div class="sc-sug" id="sc-sug" hidden></div>
   <div id="sc-pages" class="empty"></div>
  </div>
@@ -833,7 +868,7 @@
             doc.body.appendChild(root);
             // خيارات محفوظة
             const opt = (id, key, def) => { const el = $(id); el.checked = store.get(key, def) === '1'; el.onchange = () => store.set(key, el.checked ? '1' : '0'); };
-            opt('#sc-optblank', 'scOptBlank', '1'); opt('#sc-optdeskew', 'scOptDeskew', '1'); opt('#sc-optedges', 'scOptEdges', '1'); opt('#sc-optocr', 'scOptOcr', '0'); opt('#sc-optsearch', 'scOptSearch', '0'); opt('#sc-optclean', 'scOptClean', '0'); opt('#sc-optsplit', 'scOptSplit', '0'); opt('#sc-optauto', 'scOptAuto', '0'); opt('#sc-optcont', 'scOptCont', '0');
+            opt('#sc-optblank', 'scOptBlank', '1'); opt('#sc-optdeskew', 'scOptDeskew', '1'); opt('#sc-optedges', 'scOptEdges', '1'); opt('#sc-optocr', 'scOptOcr', '0'); opt('#sc-optsearch', 'scOptSearch', '0'); opt('#sc-optclean', 'scOptClean', '0'); opt('#sc-optindex', 'scOptIndex', '1'); opt('#sc-optsplit', 'scOptSplit', '0'); opt('#sc-optauto', 'scOptAuto', '0'); opt('#sc-optcont', 'scOptCont', '0');
             ['#sc-optsplit', '#sc-optauto'].forEach(id => { const e = $(id), o0 = e.onchange; e.onchange = () => { o0(); if (needAnalysis()) analyzeAll(); render(); }; });
             $('#sc-type').value = store.get('scDocType', ''); $('#sc-type').onchange = () => { store.set('scDocType', $('#sc-type').value); if (needAnalysis()) analyzeAll(); updatePreview(); };
             const tabs = root.querySelectorAll('.sc-tabs button');
@@ -879,7 +914,7 @@
                 inst.__folder = folderName; folderInst.set(win, inst);
             } else inst.open();
         },
-        folderInfo: ghInfo, flushQueue: () => qFlush(true), queueCount: async () => (await qList()).length, scanStats,
+        folderInfo: ghInfo, loadTextIndex, flushQueue: () => qFlush(true), queueCount: async () => (await qList()).length, scanStats,
         _t: { isoValid, detectContainers, isBlank, estimateSkew, estimateCropBox, processImage, flattenBg, cleanSpecks, dhash, hamming, classifyDoc, qAdd, qList, qFlush, qDel, hashAdd, hashList }   // للاختبار
     };
 })();

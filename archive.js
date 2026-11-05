@@ -396,6 +396,9 @@ async function openArchiveInternal(filterShip, filterDate) {
                 .search-bar { display: flex; gap: 10px; margin-bottom: 20px; }
                 .search-bar input { flex: 1; padding: 12px 18px; border: 2px solid #dee2e6; border-radius: 10px; font-size: 15px; }
                 .search-bar input:focus { border-color: #0a3d62; outline: none; }
+                .search-content { display: flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 14px; color: #0a3d62; font-weight: 600; cursor: pointer; }
+                .search-content input { width: 17px; height: 17px; }
+                .file-row .snip { flex-basis: 100%; font-size: 12.5px; color: #495057; background: #fff8dc; border-radius: 8px; padding: 6px 10px; direction: ltr; text-align: left; }
                 .search-summary { background: #e8f4fd; border: 1px solid #b6dcf5; color: #0a3d62; padding: 9px 14px; border-radius: 10px; margin-bottom: 12px; font-size: 14px; font-weight: 600; }
                 .file-name mark { background: #ffe58a; color: inherit; padding: 0 2px; border-radius: 3px; }
                 .loading { text-align: center; padding: 50px; color: #6c757d; font-size: 18px; }
@@ -474,6 +477,7 @@ async function openArchiveInternal(filterShip, filterDate) {
                 ${!filterShip ? `
                 <div class="search-bar">
                     <input type="text" id="archiveSearch" placeholder="🔍 بحث عام في كل المجلدات: سفينة، خط، تاريخ، رقم حاوية أو اسم مستند…" />
+                    <label class="search-content" title="يبحث أيضاً داخل نص المستندات الممسوحة بالبرنامج (OCR)"><input type="checkbox" id="archiveContentSearch"> 📝 بحث في المحتوى</label>
                 </div>` : ''}
                 <div id="archiveContent">
                     <div class="loading">⏳ جاري تحميل الأرشيف...</div>
@@ -1475,6 +1479,8 @@ async function refreshArchiveWindow(archiveWindow, filterShip, filterDate) {
                 const runIt = () => applyArchiveSearch(archiveWindow, archiveWindow._allFolders || folders, searchInput.value);
                 searchInput.addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(runIt, 150); });
                 searchInput.addEventListener('keydown', (e) => { if (e.key === 'Escape') { searchInput.value = ''; runIt(); } });
+                const csBox = archiveWindow.document.getElementById('archiveContentSearch');
+                if (csBox) csBox.addEventListener('change', async () => { if (csBox.checked && !(await ensureTextIndex(archiveWindow, archiveWindow._allFolders || folders))) csBox.checked = false; runIt(); });
             }
         }
 
@@ -1695,16 +1701,31 @@ function normSearch(t) {
         .replace(/[ً-ْـ]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه')
         .replace(/[_\-.\/\\]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
+// تحميل فهرس نص المستندات (مرة واحدة ثم يُخزَّن مؤقتاً) عند تفعيل «بحث في المحتوى»
+async function ensureTextIndex(archiveWindow, folders, force) {
+    const S = window.archiveOpener && window.archiveOpener.Scanner, content = archiveWindow.document.getElementById('archiveContent');
+    if (!S || !S.loadTextIndex) { archiveWindow.alert('⚠️ وحدة المسح (scanner.js) غير محمّلة في الصفحة الرئيسية'); return false; }
+    try {
+        const raw = await S.loadTextIndex(folders.map(f => f.name), (i, n) => { const b = archiveWindow.document.getElementById('archiveSummaryTmp') || (content.insertAdjacentHTML('afterbegin', '<div class="search-summary" id="archiveSummaryTmp"></div>'), archiveWindow.document.getElementById('archiveSummaryTmp')); b.textContent = '⏳ تحميل فهرس المحتوى… ' + i + ' / ' + n; }, force);
+        const norm = {}; Object.keys(raw).forEach(f => { norm[f] = {}; Object.keys(raw[f] || {}).forEach(n => norm[f][n] = normSearch(raw[f][n])); });
+        archiveWindow._textIdx = norm; return true;
+    } catch (e) { archiveWindow.alert('تعذّر تحميل فهرس المحتوى: ' + e.message); return false; }
+}
 function applyArchiveSearch(archiveWindow, folders, rawQuery) {
     const q = normSearch(rawQuery), tokens = q ? q.split(' ') : [];
+    const cs = archiveWindow.document.getElementById('archiveContentSearch'), tIdx = (cs && cs.checked && archiveWindow._textIdx) || null;
     if (!tokens.length) { renderArchiveFolders(archiveWindow, folders); return; }
     const hit = (hay) => tokens.every(t => hay.includes(t));
     const shown = [], info = new Map(); let nFiles = 0;
     for (const f of folders) {
         const fn = normSearch(f.name), files = f.files || [];
-        const nameHit = hit(fn), matched = new Set();
-        files.forEach((x, i) => { if (hit(fn + ' ' + normSearch(x.name))) matched.add(i); });
-        if (nameHit || matched.size) { shown.push(f); info.set(f.name, { nameHit, matched }); nFiles += nameHit ? files.length : matched.size; }
+        const nameHit = hit(fn), matched = new Set(), textOnly = new Map();
+        files.forEach((x, i) => {
+            const base = fn + ' ' + normSearch(x.name);
+            if (hit(base)) matched.add(i);
+            else if (tIdx) { const t = (tIdx[f.name] || {})[x.name]; if (t && hit(base + ' ' + t)) { matched.add(i); textOnly.set(i, t); } }
+        });
+        if (nameHit || matched.size) { shown.push(f); info.set(f.name, { nameHit, matched, textOnly }); nFiles += nameHit ? files.length : matched.size; }
     }
     renderArchiveFolders(archiveWindow, shown);
     const doc = archiveWindow.document, content = doc.getElementById('archiveContent');
@@ -1713,16 +1734,20 @@ function applyArchiveSearch(archiveWindow, folders, rawQuery) {
     const raw = String(rawQuery).trim().split(/[\s_\-.\/\\]+/).filter(Boolean).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), re = raw.length ? new RegExp('(' + raw.join('|') + ')', 'gi') : null;
     shown.forEach(f => {
         const card = Array.from(content.querySelectorAll('.folder-card')).find(c => c.getAttribute('data-folder-name') === f.name); if (!card) return;
-        const { nameHit, matched } = info.get(f.name), rows = card.querySelectorAll('.file-row');
+        const { nameHit, matched, textOnly } = info.get(f.name), rows = card.querySelectorAll('.file-row');
         rows.forEach((row, i) => {
             const show = nameHit || matched.has(i); row.style.display = show ? '' : 'none';
             const sp = row.querySelector('.file-name [title]');
             if (show && re && sp && matched.has(i)) sp.innerHTML = esc(sp.textContent).replace(re, '<mark>$1</mark>');
+            if (show && textOnly.has(i)) {   // تطابق من داخل نص المستند: نعرض مقتطفاً حوله
+                const t = textOnly.get(i), pos = Math.max(0, t.indexOf(tokens.slice().sort((x, y) => y.length - x.length)[0])), snip = t.slice(Math.max(0, pos - 45), pos + 90);
+                const sn = doc.createElement('div'); sn.className = 'snip'; sn.innerHTML = '📝 …' + esc(snip).replace(new RegExp('(' + tokens.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'gi'), '<mark>$1</mark>') + '…'; row.appendChild(sn);
+            }
         });
         const body = card.querySelector('.folder-body'); if (body) body.classList.add('active');
         const cnt = card.querySelector('.folder-count'); if (cnt && !nameHit) cnt.textContent = matched.size + ' مطابق من ' + rows.length;
     });
-    content.insertAdjacentHTML('afterbegin', '<div class="search-summary">🔎 ' + nFiles + ' مستند في ' + shown.length + ' مجلد مطابق لـ «' + esc(String(rawQuery).trim()) + '»</div>');
+    content.insertAdjacentHTML('afterbegin', '<div class="search-summary">🔎 ' + nFiles + ' مستند في ' + shown.length + ' مجلد مطابق لـ «' + esc(String(rawQuery).trim()) + '»' + (tIdx ? ' — شاملاً محتوى المستندات الممسوحة' : '') + '</div>');
 }
 
 function renderArchiveFolders(archiveWindow, folders) {

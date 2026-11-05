@@ -6,7 +6,9 @@
       "password": "admin123",
       "fullName": "المدير العام",
       "role": "admin",
-      "lineIds": ["*"],
+      "lineIds": [
+        "*"
+      ],
       "status": "active",
       "createdAt": "2026-10-13"
     },
@@ -16,9 +18,16 @@
       "password": "msc#123",
       "fullName": "Ahmed Abdelrahman",
       "role": "viewer",
-      "lineIds": ["MSC", "WEC"],
+      "lineIds": [
+        "MSC",
+        "WEC"
+      ],
       "status": "active",
-      "createdAt": "2026-10-13"
+      "createdAt": "2026-10-13",
+      "perms": [
+        "scan",
+        "upload"
+      ]
     },
     {
       "id": 3,
@@ -26,9 +35,14 @@
       "password": "yml#123",
       "fullName": "Yang Ming Shipping",
       "role": "viewer",
-      "lineIds": ["YML"],
+      "lineIds": [
+        "YML"
+      ],
       "status": "active",
-      "createdAt": "2026-10-13"
+      "createdAt": "2026-10-13",
+      "perms": [
+        "scan"
+      ]
     },
     {
       "id": 4,
@@ -36,9 +50,12 @@
       "password": "zim#123",
       "fullName": "Egy Mar",
       "role": "viewer",
-      "lineIds": ["ZIM"],
+      "lineIds": [
+        "ZIM"
+      ],
       "status": "active",
-      "createdAt": "2026-10-13"
+      "createdAt": "2026-10-13",
+      "perms": []
     }
   ],
   "loginAttempts": {}
