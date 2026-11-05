@@ -7,28 +7,28 @@
 button{background:#0a3d62;color:#fff;border:0;border-radius:10px;padding:12px 26px;font-size:16px;font-weight:bold;cursor:pointer}
 #log{margin-top:16px;padding:12px;border-radius:10px;background:#f1f5f9;white-space:pre-wrap;font-size:14px}</style></head><body>
 <h2>🧪 اختبار PDF النصي ببيانات تجريبية</h2>
-<p>يتحقق (بصفحات طولية) من أن الخط العربي والعريض وتشكيل الحروف والجداول والألوان تعمل في متصفحك، دون الحاجة لفتح البرنامج.</p>
+<p>يتحقق من أن الخط العربي وتشكيل الحروف والجداول والألوان وبطاقات الإجمالي تعمل في متصفحك، دون الحاجة لفتح البرنامج.</p>
 <button onclick="run()">📄 إنشاء PDF تجريبي وتنزيله</button><div id="log">جاهز.</div>
 <script>
 const log=m=>document.getElementById('log').textContent=m;
 const C=(t,bg,bold,color)=>({text:t,bg:bg||null,bold:!!bold,color:color||null});
+const card=(bg,lines)=>({bg,lines:lines.map(l=>({text:l[0],px:l[1]||12,bold:!!l[2],color:l[3]||null,bg:l[4]||null}))});
 async function run(){
   try{
+    if(!window.PdfText) throw new Error('PdfText غير معرّف: تأكد أن pdf-text.js وpdf-font.js بجانب هذه الصفحة ثم Ctrl+F5');
     const heads=['رقم الحاوية','Size','TRSHP بعد الخصم','TRSHP Net','طريقة الحساب','EXPRT Days','خطر','Total Net','Vessel Name'];
     const rows=[];
     for(let i=0;i<60;i++) rows.push([C('ZIMU'+(1000000+i*137)),C('22'),C(String(40+i%9)),C(String(i%12),[212,237,218],true),
       C(i%2?'بعد الخصم':'طريقة مباشرة'),C(String(3+i%6),[227,242,253]),C(i%5?'—':'❌',null,false,i%5?null:[220,53,69]),C(String(i%12+3)),C('MARLA TIGER')]);
-    const tab={id:'tab1',title:'TRSHP + EXPRT',heads,rows,stats:[
-        {bg:[102,126,234],lines:[{text:'إجمالي TRSHP',px:11,color:[255,255,255]},{text:'1245',px:22,bold:true,color:[255,255,255]},{text:'صافي أيام الترانزيت',px:9,color:[255,255,255]},{text:'20 قدم: 820 يوم',px:9,color:[255,255,255]},{text:'40 قدم: 425 يوم',px:9,color:[255,255,255]}]},
-        {bg:[240,147,251],lines:[{text:'إجمالي EXPRT (بعد الخصم)',px:11,color:[255,255,255]},{text:'318',px:22,bold:true,color:[255,255,255]},{text:'OOG:',px:9,bold:true,color:[255,255,255]},{text:'40 قدم: 40 يوم (2 حاوية)',px:9,color:[255,255,255]}]},
-        {bg:[255,255,255],lines:[{text:'ReExport_Storage',px:10,bold:true,color:[255,255,255],bg:[255,107,107]},{text:'مع Dray',px:10,color:[102,102,102],bg:[254,243,199]},{text:'54',px:16,bold:true,color:[255,107,107],bg:[254,243,199]},{text:'(3 حاوية)',px:9,color:[33,37,41],bg:[254,243,199]}]},
-        {bg:[67,233,123],lines:[{text:'إجمالي الحاويات',px:11,color:[255,255,255]},{text:'60',px:22,bold:true,color:[255,255,255]},{text:'حاوية',px:9,color:[255,255,255]}]}
-      ],extra:null};
+    const stats=[card([102,126,234],[['إجمالي الحاويات',11,false,[255,255,255]],['60',22,true,[255,255,255]]]),
+                 card([40,167,69],[['TRSHP أيام',11,false,[255,255,255]],['1,240',22,true,[255,255,255]],['MSC JADE',10,false,[255,255,255]]]),
+                 card([255,193,7],[['EXPRT صافي',11,true,[60,60,60]],['318',22,true,[60,60,60]]])];
+    const tab={id:'tab1',title:'TRSHP + EXPRT',heads,rows,stats,extra:null};
     const t0=performance.now();
-    const doc=await PdfText.buildDocument([tab,Object.assign({},tab,{id:'tab8',title:'Storage Finalout',extra:{orderNumber:'A-1025',lineOp:'MSC',count:'60'}})],{carrier:'MSC JADE',shipDate:'2026-10-24',lineId:'ZIM'});
+    const doc=await PdfText.buildDocument([tab,Object.assign({},tab,{id:'tab8',title:'Storage Finalout',extra:{orderNumber:'A-1025',lineOp:'MSC',count:'60'}})],{carrier:'MSC JADE',shipDate:'2026-10-24',lineId:'MSC'});
     const kb=Math.round(doc.output('arraybuffer').byteLength/1024);
     doc.save('اختبار-pdf-نصي.pdf');
-    log('✅ تم الإنشاء في '+Math.round(performance.now()-t0)+' مللي ثانية\nالحجم: '+kb+' KB — '+doc.getNumberOfPages()+' صفحة\nافتح الملف وتأكد من: العربية متصلة وبالاتجاه الصحيح، الألوان، تكرار الترويسة، الصفحة الأخيرة بالتوقيعات.');
+    log('✅ تم الإنشاء في '+Math.round(performance.now()-t0)+' مللي ثانية\nالحجم: '+kb+' KB — '+doc.getNumberOfPages()+' صفحة\nافتح الملف وتأكد من: العربية متصلة وبالاتجاه الصحيح، أسماء السفن الإنجليزية بترتيبها، الألوان، البطاقات، التوقيعات.');
   }catch(e){log('❌ فشل: '+e.message+'\n(هذا هو السبب الذي سيجعل البرنامج يعود للطريقة الصورية)');console.error(e)}
 }
 </script></body></html>

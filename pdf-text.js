@@ -1,5 +1,6 @@
 // ============================================================
 // 📄 مولّد PDF نصي لتقرير التخزين (بديل أصغر حجماً من الطريقة الصورية)
+// (نسخة البرنامج المرفق + إصلاح ترتيب الكلمات اللاتينية المتتالية داخل النص العربي)
 // - يقرأ الجداول الحيّة من الصفحة، فيحترم اختيار الأعمدة والفلاتر وألوان الخلايا كما هي
 // - النص قابل للبحث والنسخ، والعربية بخط مضمَّن (pdf-font.js)
 // - عند أي فشل تعود الدالة الأصلية تلقائياً إلى الطريقة الصورية
@@ -74,19 +75,36 @@
 
     function toVisual(text) { return toPUA(toVisualRaw(text)); }
 
+    // الترتيب البصري (RTL). المقاطع اللاتينية/الأرقام المتتالية تُحفظ بترتيبها الطبيعي
+    // (مثل «MSC JADE» أو «TRSHP + EXPRT» أو «(Container) 123») وتُعامل كمقطع واحد، كما يفعل المتصفح.
     function toVisualRaw(text) {
         text = clean(text);
         if (!AR_LETTERS.test(text)) return text;
-        const runs = [];
-        const re = /([\u0621-\u064A\u0640\u064B-\u0652]+)|([A-Za-z0-9][A-Za-z0-9.\-\/:_#%+@&]*)|(\s+)|([\s\S])/gu;
+        const toks = [];
+        const re = /([\u0621-\u064A\u0640\u064B-\u0652]+)|(\(?[A-Za-z0-9][A-Za-z0-9.\-\/:_#%+@&]*\)?)|(\s+)|([\s\S])/gu;
         let m;
         while ((m = re.exec(text))) {
             if (m[1]) {
                 const codes = [...m[1]].map(c => c.codePointAt(0)).filter(c => c < 0x64B || c > 0x652);
-                runs.push(String.fromCodePoint(...shape(codes).reverse()));
-            } else if (m[2]) runs.push(m[2]);
-            else if (m[3]) runs.push(' ');
-            else runs.push(MIRROR[m[4]] || m[4]);
+                toks.push({ k: 'ar', s: String.fromCodePoint(...shape(codes).reverse()) });
+            } else if (m[2]) toks.push({ k: 'lt', s: m[2] });
+            else if (m[3]) toks.push({ k: 'sp', s: ' ' });
+            else toks.push({ k: MIRROR[m[4]] ? 'br' : 'ne', s: m[4] });
+        }
+        // دمج: لاتيني + (مسافات/رموز محايدة) + لاتيني ← مقطع LTR واحد
+        const runs = [];
+        for (let i = 0; i < toks.length; i++) {
+            const t = toks[i];
+            if (t.k === 'lt') {
+                let s = t.s, j = i + 1;
+                for (;;) {
+                    let n = j; while (n < toks.length && (toks[n].k === 'sp' || toks[n].k === 'ne')) n++;
+                    if (n < toks.length && toks[n].k === 'lt') { for (let q = j; q <= n; q++) s += toks[q].s; j = n + 1; } else break;
+                }
+                runs.push(s); i = j - 1;
+            } else if (t.k === 'ar') runs.push(t.s);
+            else if (t.k === 'sp') runs.push(' ');
+            else runs.push(t.k === 'br' ? MIRROR[t.s] : t.s);
         }
         return runs.reverse().join('');
     }
