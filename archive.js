@@ -358,6 +358,8 @@ window.openFilteredArchive = async function(shipName, shipDate) {
 // 🎯 الدالة الداخلية — تنشئ نافذة الأرشيف
 // ============================================================
 async function openArchiveInternal(filterShip, filterDate) {
+    // الأرشيف لأصحاب صلاحيات الكتابة (مسح/رفع/حذف) والمدير فقط — المشاهد العادي لا يفتحه حتى لو استدعى الدالة يدوياً
+    if (typeof hasPerm === 'function' && !['scan', 'upload', 'delete'].some(p => hasPerm(p))) { alert('⛔ ليس لديك صلاحية فتح الأرشيف'); return; }
     let archiveWindow = window.open('', '_blank', 'width=1200,height=800,scrollbars=yes');
     if (!archiveWindow) {
         alert("⚠️ الرجاء السماح للنوافذ المنبثقة");

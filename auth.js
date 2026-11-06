@@ -88,6 +88,26 @@ async function verifyPassword(inputPassword, storedPassword) {
 // ============================================================
 // 📥 تحميل المستخدمين من GitHub
 // ============================================================
+// عناوين الخادم المحلي المحتملة (نفس عنوان الصفحة أولاً ثم العناوين المعروفة)
+function localUsersHosts() {
+    const h = [];
+    if (/^https?:$/.test(location.protocol) && !/github\.io|githubusercontent\.com/.test(location.origin)) h.push(location.origin);
+    h.push('http://10.0.182.128:3000', 'http://10.63.80.178:3000', 'http://localhost:3000', 'http://127.0.0.1:3000');
+    return h.filter((v, i, x) => x.indexOf(v) === i);
+}
+async function fetchLocalUsers() {
+    for (const host of localUsersHosts()) {
+        try {
+            const c = new AbortController(), t = setTimeout(() => c.abort(), 2500);
+            const r = await fetch(host + '/api/users', { signal: c.signal, cache: 'no-store' }); clearTimeout(t);
+            if (!r.ok) continue;
+            const d = await r.json();
+            if (d && Array.isArray(d.users) && d.users.length) return d.users;
+        } catch (e) { /* جرّب العنوان التالي */ }
+    }
+    return null;
+}
+
 async function loadUsers(forceRefresh = false) {
     if (cachedUsers && !forceRefresh) {
         return cachedUsers;
@@ -103,20 +123,45 @@ async function loadUsers(forceRefresh = false) {
         return cachedUsers;
     } catch (error) {
         console.error('❌ فشل تحميل users.json:', error);
-        // محاولة استخدام نسخة محفوظة محلياً
+        // 1) الخادم المحلي (داخل الشبكة بلا إنترنت): نسخة محدّثة من users.json
+        const viaServer = await fetchLocalUsers();
+        if (viaServer) {
+            console.log('🖥️ مستخدمون من الخادم المحلي');
+            cachedUsers = viaServer;
+            try { localStorage.setItem('cached_users', JSON.stringify(viaServer)); } catch (e) { }
+            return cachedUsers;
+        }
+        // 2) نسخة محفوظة في هذا المتصفح من آخر دخول ناجح
         const localUsers = localStorage.getItem('cached_users');
         if (localUsers) {
             console.log('📦 استخدام نسخة محلية');
             cachedUsers = JSON.parse(localUsers);
             return cachedUsers;
         }
-        throw new Error('تعذّر تحميل بيانات المستخدمين');
+        throw new Error('تعذّر تحميل بيانات المستخدمين — لا إنترنت ولا خادم محلي ولا نسخة محفوظة في هذا المتصفح');
     }
 }
 
 // ============================================================
 // 🚪 تسجيل الدخول
 // ============================================================
+// ============================================================
+// 🔑 رمز GitHub الخاص بالمستخدم (tokenEnc في users.json)
+//   يشفّره المدير بكلمة مرور المستخدم (PBKDF2 + AES-GCM) عبر perms-manager.html،
+//   فيُفكّ عند الدخول فقط لمن يملكه، ويُمسح عند الخروج. من لا رمز له لا يستطيع الكتابة على GitHub إطلاقاً.
+// ============================================================
+async function decryptUserToken(tokenEnc, password) {
+    if (!window.crypto || !crypto.subtle) throw new Error('فك الرمز يتطلب فتح البرنامج عبر HTTPS');
+    const raw = Uint8Array.from(atob(String(tokenEnc).trim()), c => c.charCodeAt(0));
+    const salt = raw.slice(0, 16), iv = raw.slice(16, 28), data = raw.slice(28);
+    const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 150000, hash: 'SHA-256' }, km, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data));
+}
+function clearAuthToken() {
+    if (localStorage.getItem('github_token_src') === 'auth') { localStorage.removeItem('github_token'); localStorage.removeItem('github_token_src'); }
+}
+
 async function login(username, password, rememberMe = false) {
     // 1. تحقق من الحظر
     if (isLocked(username)) {
@@ -163,6 +208,15 @@ async function login(username, password, rememberMe = false) {
         loginTime: Date.now()
     };
     
+    // رمز GitHub الخاص بهذا المستخدم (إن حدّده المدير)
+    window.tokenDecryptError = null;
+    try {
+        if (user.tokenEnc) {
+            const t = (await decryptUserToken(user.tokenEnc, password)).trim();
+            if (t) { localStorage.setItem('github_token', t); localStorage.setItem('github_token_src', 'auth'); }
+        } else clearAuthToken();
+    } catch (e) { console.warn('تعذّر فك رمز GitHub:', e); window.tokenDecryptError = e.message || String(e); clearAuthToken(); }
+
     localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(sessionUser));
     localStorage.setItem('cached_users', JSON.stringify(users));
     currentUser = sessionUser;
@@ -180,6 +234,7 @@ function logout() {
     if (currentUser) {
         logActivity('logout', `تسجيل خروج: ${currentUser.fullName}`);
     }
+    clearAuthToken();
     localStorage.removeItem(CURRENT_USER_KEY);
     currentUser = null;
     window.location.reload();
@@ -318,16 +373,18 @@ function applyPermissions() {
         return;
     }
     
-    // Viewer: إخفاء كل عناصر الإدارة
+    // Viewer: إخفاء عناصر الإدارة، مع إبقاء ما تسمح به صلاحياته (perms)
+    const writer = ['scan', 'upload', 'delete'].some(p => hasPerm(p));
     const elementsToHide = [
         '#fileInput', '.file-label',           // رفع الملفات
         '#addGlobalLineBtn', '#newGlobalLineName', // إدارة الخطوط
         '#manageUsersBtn',                      // إدارة المستخدمين
-		'#archiveBtn',
-		'#setTokenBtn',                         // زر التوكن
-		'#createArchiveBtn',                    // 🆕 إخفاء زر إنشاء مجلد أرشيف
         '.settings-btn'                         // أزرار الإعدادات
     ];
+    if (!writer) elementsToHide.push('#archiveBtn');               // زر أرشيف السفن لمن لديه أي صلاحية كتابة
+    if (!hasPerm('upload')) elementsToHide.push('#createArchiveBtn'); // إنشاء مجلد أرشيف = صلاحية الرفع
+    const tokBtn = document.getElementById('setTokenBtn');           // زر الرمز: لأصحاب صلاحيات الكتابة الذين لا رمز لديهم
+    if (tokBtn) tokBtn.style.display = (writer && !(localStorage.getItem('github_token') || '').trim()) ? 'inline-block' : 'none';
     
     elementsToHide.forEach(selector => {
         document.querySelectorAll(selector).forEach(el => {
@@ -348,7 +405,9 @@ function updateUserBar(user) {
     const bar = document.getElementById('userBar');
     if (!bar) return;
     
-    const roleLabel = user.role === 'admin' ? '👑 مدير' : '👁️ مشاهد';
+    const PL = { scan: 'مسح', upload: 'رفع', delete: 'حذف' };
+    const pl = user.role === 'admin' ? [] : (Array.isArray(user.perms) && user.perms.includes('*') ? Object.values(PL) : Object.keys(PL).filter(k => (user.perms || []).includes(k)).map(k => PL[k]));
+    const roleLabel = user.role === 'admin' ? '👑 مدير' : ('👁️ مشاهد' + (pl.length ? ' + ' + pl.join('/') : ''));
     const linesLabel = user.lineIds.includes('*') ? 'كل الخطوط' : user.lineIds.join(' • ');
     
     bar.innerHTML = `

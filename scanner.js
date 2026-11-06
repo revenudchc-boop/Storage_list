@@ -379,17 +379,46 @@
         }
 
         // ---------- الكاميرا ----------
+        // ---------- الكاميرا (مصمَّمة للهاتف: ملء الشاشة + التقاط متعدد) ----------
+        let facing = 'environment', torchOn = false, camShots = 0, camPending = 0, camChain = Promise.resolve();
+        const camMsg = (e) => !win.isSecureContext ? 'الكاميرا المباشرة تتطلب فتح البرنامج عبر HTTPS (أو localhost). استخدم زر «التقاط بتطبيق كاميرا الهاتف» بدلاً منها.'
+            : (e && e.name === 'NotAllowedError') ? 'تم رفض إذن الكاميرا — اسمح بها من إعدادات المتصفح (أيقونة القفل بجانب العنوان) ثم أعد المحاولة.'
+            : (e && (e.name === 'NotFoundError' || e.name === 'OverconstrainedError')) ? 'لم يتم العثور على كاميرا في هذا الجهاز.'
+            : (e && e.name === 'NotReadableError') ? 'الكاميرا مستخدمة في تطبيق آخر — أغلقه ثم أعد المحاولة.' : 'تعذّر فتح الكاميرا: ' + ((e && e.message) || e);
+        async function camOpenStream() {
+            if (stream) stream.getTracks().forEach(t => t.stop()); stream = null;
+            const md = win.navigator.mediaDevices; if (!md || !md.getUserMedia) throw Object.assign(new Error('unsupported'), { name: 'NotFoundError' });
+            let last; for (const t of [{ width: { ideal: 3840 }, height: { ideal: 2160 } }, { width: { ideal: 1920 }, height: { ideal: 1080 } }, {}]) {
+                try { stream = await md.getUserMedia({ video: { facingMode: { ideal: facing }, ...t }, audio: false }); break; }
+                catch (e) { last = e; if (e.name === 'NotAllowedError' || e.name === 'NotReadableError') throw e; }
+            }
+            if (!stream) throw last;
+            const v = $('#sc-camv'); v.srcObject = stream; try { await v.play(); } catch (e) { }
+            const tr = stream.getVideoTracks()[0], cap = (tr.getCapabilities && tr.getCapabilities()) || {}, st = (tr.getSettings && tr.getSettings()) || {};
+            try { if (cap.focusMode && cap.focusMode.includes('continuous')) await tr.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) { }
+            torchOn = false; const tb = $('#sc-torch'); tb.hidden = !cap.torch; tb.classList.remove('on');
+            const z = $('#sc-zoom'); if (cap.zoom) { z.min = cap.zoom.min; z.max = cap.zoom.max; z.step = cap.zoom.step || 0.1; z.value = st.zoom || cap.zoom.min; z.hidden = false; } else z.hidden = true;
+            $('#sc-camres').textContent = st.width ? st.width + '×' + st.height : '';
+            v.classList.toggle('mir', facing === 'user');
+        }
         async function camStart() {
-            try {
-                stream = await win.navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 2560 } }, audio: false });
-                const v = $('#sc-video'); v.srcObject = stream; v.hidden = false; $('#sc-snap').hidden = false; $('#sc-camstop').hidden = false; $('#sc-cam').hidden = true;
-            } catch (e) { toast('تعذّر فتح الكاميرا (يتطلب HTTPS وإذن الكاميرا).', true); }
+            camShots = 0; $('#sc-camcnt').textContent = '0'; $('#sc-camthumb').hidden = true; const ov = $('#sc-camov'); ov.hidden = false; $('#sc-camerr').hidden = true;
+            try { await camOpenStream(); } catch (e) { const er = $('#sc-camerr'); er.hidden = false; er.textContent = camMsg(e); }
         }
-        function camStop() { if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; if (!root) return; $('#sc-video').hidden = true; $('#sc-snap').hidden = true; $('#sc-camstop').hidden = true; $('#sc-cam').hidden = false; }
-        async function camSnap() {
-            const v = $('#sc-video'), c = mkCanvas(v.videoWidth, v.videoHeight); c.getContext('2d').drawImage(v, 0, 0);
-            const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92)); blob.name = 'camera_' + Date.now() + '.jpg'; await addImages([blob], 'كاميرا');
+        function camStop() { if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; if (!root) return; const o = $('#sc-camov'); if (o) o.hidden = true; const v = $('#sc-camv'); if (v) v.srcObject = null; }
+        async function camDone() { const n = camShots; camStop(); await camChain; if (n) toast('📷 تمت إضافة ' + n + ' صفحة — راجعها ثم احفظ'); }
+        function camSnap() {
+            const v = $('#sc-camv'); if (!stream || !v.videoWidth) return;
+            const c = mkCanvas(v.videoWidth, v.videoHeight); c.getContext('2d').drawImage(v, 0, 0);
+            const fl = $('#sc-flash'); fl.classList.remove('go'); void fl.offsetWidth; fl.classList.add('go'); try { win.navigator.vibrate && win.navigator.vibrate(25); } catch (e) { }
+            const sm = mkCanvas(96, 96 * v.videoHeight / v.videoWidth); sm.getContext('2d').drawImage(c, 0, 0, sm.width, sm.height); const th = $('#sc-camthumb'); th.src = sm.toDataURL('image/jpeg', 0.6); th.hidden = false;
+            camShots++; $('#sc-camcnt').textContent = camShots; camPending++; $('#sc-cambusy').hidden = false;
+            camChain = camChain.then(async () => { const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92)); blob.name = 'camera_' + Date.now() + '.jpg'; await addImages([blob], 'كاميرا'); })
+                .catch(e => { lastErr = 'cam: ' + e.message; }).then(() => { camPending--; if (!camPending) { const b = $('#sc-cambusy'); if (b) b.hidden = true; } });
         }
+        async function camFlip() { facing = facing === 'environment' ? 'user' : 'environment'; try { await camOpenStream(); $('#sc-camerr').hidden = true; } catch (e) { const er = $('#sc-camerr'); er.hidden = false; er.textContent = camMsg(e); } }
+        async function camTorch() { const tr = stream && stream.getVideoTracks()[0]; if (!tr) return; try { torchOn = !torchOn; await tr.applyConstraints({ advanced: [{ torch: torchOn }] }); $('#sc-torch').classList.toggle('on', torchOn); } catch (e) { torchOn = false; toast('الفلاش غير مدعوم في هذه الكاميرا', true); } }
+        function camZoom(e) { const tr = stream && stream.getVideoTracks()[0]; if (tr) tr.applyConstraints({ advanced: [{ zoom: +e.target.value }] }).catch(() => { }); }
 
         // ---------- السكانر المباشر (scan-bridge) ----------
         async function bj(path, o) {
@@ -792,11 +821,50 @@
 :root[data-theme=dark] .sc-help,:root[data-theme=dark] .sc-warnbar{background:#3a3115;border-color:#6b5a22;color:#f2dc99}
 .sc-note{font-size:13px;color:var(--mu);line-height:1.9;margin:0 0 12px}
 .sc-drop{border:2px dashed var(--bd);border-radius:14px;padding:26px 16px;text-align:center;background:var(--bg)}.sc-drop.over{border-color:var(--pri);background:#0a6cff12}.sc-drop .big{font-size:34px}.sc-drop p{margin:6px 0 14px;color:var(--mu);font-size:13px}
-#sc-video{width:100%;max-height:340px;background:#000;border-radius:12px;margin-bottom:10px}
+#sc-video{display:none}
+.sc-camcard{text-align:center;background:var(--bg2);border:1px dashed var(--bd);border-radius:16px;padding:22px 18px}.sc-camcard .big{font-size:46px;line-height:1}.sc-camcard h4{margin:8px 0 4px;font-size:16px}.sc-camcard p{margin:0 auto 14px;max-width:520px;color:var(--mu);font-size:13px;line-height:1.7}
+.sc-camacts{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}.sc-camacts .sc-primary{padding:13px 22px;font-size:14.5px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px}.sc-camacts .alt{background:#fff;color:var(--pri);border:2px solid var(--pri)}
+.sc-tips{list-style:none;margin:16px auto 0;padding:0;max-width:520px;text-align:right;color:var(--mu);font-size:12.5px;line-height:1.9}.sc-tips li:before{content:'✓ ';color:#10b981;font-weight:700}
+#sc-camov{position:fixed;inset:0;z-index:2147483001;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:manipulation}
+#sc-camov[hidden]{display:none!important}#sc-camv{width:100%;height:100%;object-fit:contain;background:#000}#sc-camv.mir{transform:scaleX(-1)}
+.cam-guide{position:absolute;inset:14% 7% 24%;border:2px dashed #ffffffaa;border-radius:14px;pointer-events:none;box-shadow:0 0 0 9999px #0000003a}
+#sc-flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}#sc-flash.go{animation:camFlash .28s ease-out}@keyframes camFlash{0%{opacity:.85}100%{opacity:0}}
+.cam-top{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:max(12px,env(safe-area-inset-top)) 14px 12px;background:linear-gradient(#000a,#0000);color:#fff}
+.cam-tt{flex:1;text-align:center;font:700 14px Tahoma,sans-serif;display:flex;flex-direction:column;gap:2px}.cam-tt small{font-weight:400;font-size:11px;opacity:.7;direction:ltr}.cam-cnt{background:#ffffff2e;border-radius:999px;padding:7px 13px;font:700 14px Tahoma,sans-serif;min-width:62px;text-align:center}
+.cam-x{width:44px;height:44px;border:0;border-radius:50%;background:#ffffff2e;color:#fff;font-size:20px;cursor:pointer}
+.cam-bot{position:absolute;bottom:0;left:0;right:0;padding:14px 18px max(18px,env(safe-area-inset-bottom));background:linear-gradient(#0000,#000c);display:flex;flex-direction:column;gap:12px;align-items:center}
+.cam-ctl{display:flex;align-items:center;justify-content:space-between;width:min(420px,100%)}.cam-side{display:flex;gap:10px}
+.cam-b{width:54px;height:54px;border:0;border-radius:50%;background:#ffffff2e;color:#fff;font-size:22px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1}.cam-b small{font-size:10px;margin-top:2px}.cam-b.on{background:#ffd54a;color:#000}#sc-camdone{background:#10b981}
+.cam-shutter{width:78px;height:78px;border-radius:50%;border:4px solid #fff;background:transparent;padding:5px;cursor:pointer}.cam-shutter i{display:block;width:100%;height:100%;border-radius:50%;background:#fff;transition:.1s}.cam-shutter:active i{transform:scale(.86);background:#ddd}
+#sc-zoom{width:min(300px,80%);accent-color:#fff}#sc-camthumb{position:absolute;left:20px;bottom:calc(max(18px,env(safe-area-inset-bottom)) + 76px);width:46px;border-radius:8px;border:2px solid #fff;box-shadow:0 2px 8px #0008}
+#sc-camerr{position:absolute;left:16px;right:16px;top:50%;transform:translateY(-50%);background:#7a1f1f;color:#fff;padding:18px;border-radius:14px;text-align:center;font:600 14px/1.8 Tahoma,sans-serif}
+#sc-cambusy{position:absolute;top:calc(max(12px,env(safe-area-inset-top)) + 58px);left:50%;transform:translateX(-50%);background:#000a;color:#fff;border-radius:999px;padding:6px 14px;font:600 12px Tahoma,sans-serif}
+@media (max-width:620px){#sc-root{padding:0!important}#sc-box{width:100vw;max-width:100vw;height:100vh;height:100dvh;max-height:100dvh;border-radius:0}.sc-foot{padding:12px;gap:8px}.sc-foot .sc-f.t{flex:1 1 38%;min-width:0}.sc-foot .sc-f{flex:1 1 55%;min-width:0}.sc-foot #sc-save{flex:1 1 100%;min-height:48px;font-size:15px}.sc-camacts .sc-primary{flex:1 1 100%}.sc-head{padding:12px}}
 .sc-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .sc-ph{display:flex;align-items:center;gap:10px;margin:2px 0 8px;flex-wrap:wrap}.sc-ph h4{margin:0;font-size:15px}
 .sc-badge{display:inline-block;min-width:24px;text-align:center;background:var(--pri);color:#fff;border-radius:999px;padding:1px 8px;font-size:12.5px;margin-right:4px}
-.sc-opts{display:flex;gap:16px;flex-wrap:wrap;margin:0 0 10px;padding:8px 12px;background:var(--bg2);border:1px solid var(--bd);border-radius:10px}
+.sc-opts{margin:0 0 10px;background:var(--bg2);border:1px solid var(--bd);border-radius:12px;overflow:hidden}
+.sc-opts-h{all:unset;box-sizing:border-box;width:100%;display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;font:600 13px Tahoma,sans-serif;color:inherit}
+.sc-opts-h:focus-visible{outline:2px solid var(--pri);outline-offset:-2px}
+.sc-opts-h b{font-weight:700}
+.sc-opts-n{font-style:normal;background:var(--pri);color:#fff;border-radius:999px;min-width:22px;padding:1px 8px;text-align:center;font-size:12px}
+.sc-opts-sum{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--mu);font-size:12px;font-weight:400}
+.sc-opts.open .sc-opts-sum{visibility:hidden}
+.sc-opts-c{text-decoration:none;color:var(--mu);transition:transform .2s;margin-right:auto}
+.sc-opts:not(.open) .sc-opts-c{transform:rotate(90deg)}
+.sc-opts-b{display:flex;flex-wrap:wrap;gap:10px 22px;padding:2px 12px 12px;border-top:1px dashed var(--bd);padding-top:10px}
+.sc-opts:not(.open) .sc-opts-b{display:none}
+.sc-grp{display:flex;flex-direction:column;gap:6px;min-width:0}
+.sc-grp small{color:var(--mu);font-size:11px;font-weight:700;letter-spacing:.3px}
+.sc-chips{display:flex;flex-wrap:wrap;gap:6px}
+.sc-chip{position:relative;cursor:pointer}
+.sc-chip input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+.sc-chip span{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border:1px solid var(--bd);border-radius:999px;font-size:12.5px;color:var(--mu);background:transparent;transition:all .15s;user-select:none}
+.sc-chip span i{font-style:normal}
+.sc-chip:hover span{border-color:var(--pri)}
+.sc-chip input:checked+span{background:var(--pri);border-color:var(--pri);color:#fff;font-weight:600;box-shadow:0 1px 4px #0003}
+.sc-chip input:focus-visible+span{outline:2px solid var(--pri2);outline-offset:2px}
+@media (max-width:620px){.sc-opts-sum{display:none}.sc-opts-b{gap:10px}.sc-grp{width:100%}}
 .sc-chk{font-size:12.5px;color:var(--mu);display:flex;align-items:center;gap:5px}.sc-sp{margin-right:auto}
 .sc-sug{margin:0 0 10px;padding:9px 12px;border-radius:10px;background:#e8f4ff;border:1px solid #b6dcff;color:#0b4a82;font-size:13px}
 :root[data-theme=dark] .sc-sug{background:#14314d;border-color:#245b8c;color:#bfe0ff}
@@ -848,14 +916,22 @@
    <div class="sc-row"><button class="sc-primary" id="sc-pick" style="padding:10px 18px;font-size:14px">📁 اختيار مجلد المسح</button><span id="sc-folderstate"></span></div>
   </div>
   <div class="sc-pane" data-pane="cam" hidden>
-   <video id="sc-video" autoplay playsinline muted hidden></video>
-   <div class="sc-row"><button class="sc-primary" id="sc-cam" style="padding:10px 18px;font-size:14px">📷 تشغيل الكاميرا</button><button class="sc-primary" id="sc-snap" hidden style="padding:10px 18px;font-size:14px">📸 التقاط صورة</button><button class="sc-ghost" id="sc-camstop" hidden>إيقاف الكاميرا</button></div>
+   <div class="sc-camcard">
+    <div class="big">📷</div>
+    <h4>صوّر المستند بكاميرا الجهاز</h4>
+    <p>تدعم الكاميرا الخلفية للهاتف، مع التقاط عدة صفحات متتالية وفلاش وتقريب. يُقصّ حول الورقة ويُعدَّل ميلها تلقائياً بعد كل صورة.</p>
+    <div class="sc-camacts">
+     <button class="sc-primary" id="sc-cam">📷 فتح الكاميرا (ملء الشاشة)</button>
+     <label class="sc-primary alt" for="sc-native">📱 التقاط بتطبيق كاميرا الهاتف</label><input type="file" id="sc-native" accept="image/*" capture="environment" hidden>
+    </div>
+    <ul class="sc-tips"><li>ضع المستند على سطح مستوٍ وفي إضاءة جيدة</li><li>صوّر من الأعلى مباشرة وبحيث تظهر الورقة كاملة</li><li>«التقاط بتطبيق الهاتف» أفضل جودة وتركيزاً على بعض الأجهزة، لكنه صورة واحدة كل مرة</li></ul>
+   </div>
   </div>
   <div class="sc-pane" data-pane="file" hidden>
    <div class="sc-drop" id="sc-drop"><div class="big">📤</div><p>اسحب الصور أو ملفات PDF وأفلتها هنا</p><button class="sc-primary" id="sc-up" style="padding:10px 18px;font-size:14px">اختيار ملفات</button><input type="file" id="sc-file" multiple accept="image/*,.pdf" hidden></div>
   </div>
   <div class="sc-ph"><h4>الصفحات <span class="sc-badge" id="sc-count">0</span></h4><button class="sc-ghost" id="sc-ocr" disabled title="يقرأ الصفحة الأولى ويقترح رقم الحاوية">🔎 قراءة رقم الحاوية (OCR)</button><button class="sc-ghost sc-sp" id="sc-clear" disabled>🗑 مسح الكل</button></div>
-  <div class="sc-opts"><label class="sc-chk"><input type="checkbox" id="sc-optblank"> حذف الصفحات الفارغة تلقائياً</label><label class="sc-chk" title="يقدّر ميل كل صفحة ويعدّلها فور استلامها"><input type="checkbox" id="sc-optdeskew"> تصحيح الميل تلقائياً</label><label class="sc-chk" title="يقص الحواف الداكنة وظل غطاء السكانر حول الورقة فور استلام كل صفحة"><input type="checkbox" id="sc-optedges"> حذف الحواف الخارجية تلقائياً</label><label class="sc-chk" title="يعادل الإضاءة ويزيل الظلال والخلفية الرمادية والنقاط وثقوب الدباسة (قد يبطئ المعالجة قليلاً)"><input type="checkbox" id="sc-optclean"> تحسين الجودة (ظلال/نقاط/ثقوب)</label><label class="sc-chk" title="الورقة الفارغة أو تغيّر رقم الحاوية يبدأ مستنداً جديداً، فيُحفظ كل مستند في ملف مستقل"><input type="checkbox" id="sc-optsplit"> فصل المستندات تلقائياً (ورقة فاصلة / رقم حاوية)</label><label class="sc-chk" title="يقرأ كل صفحة ويسمّي الملف برقم الحاوية الصحيح (ISO 6346)"><input type="checkbox" id="sc-optauto"> تسمية ذكية برقم الحاوية</label><label class="sc-chk" title="بعد كل مسح يسألك عن دفعة تالية فتمسح المستندات واحداً بعد الآخر"><input type="checkbox" id="sc-optcont"> مسح متواصل</label><label class="sc-chk"><input type="checkbox" id="sc-optocr"> قراءة رقم الحاوية تلقائياً بعد المسح</label><label class="sc-chk" title="يقرأ نص كل مستند (OCR) ويحفظه في سجل المجلد ليمكن البحث بمحتوى المستند من شاشة الأرشيف — يبطئ الحفظ"><input type="checkbox" id="sc-optindex"> فهرسة النص للبحث بالمحتوى</label><label class="sc-chk" title="يضيف نصاً مخفياً (إنجليزي وأرقام) للبحث داخل الملف — أبطأ في الحفظ"><input type="checkbox" id="sc-optsearch"> PDF قابل للبحث (إنجليزي/أرقام)</label></div>
+  <div class="sc-opts" id="sc-opts"><button type="button" class="sc-opts-h" id="sc-opts-t" aria-expanded="true"><b>⚙️ خيارات المعالجة</b><em class="sc-opts-n" id="sc-opts-n">0</em><span class="sc-opts-sum" id="sc-opts-s"></span><u class="sc-opts-c">▾</u></button><div class="sc-opts-b" id="sc-opts-b"><div class="sc-grp"><small>الصور</small><div class="sc-chips"><label class="sc-chip" title="حذف الصفحات الفارغة تلقائياً"><input type="checkbox" id="sc-optblank"><span><i>🗑️</i>الصفحات الفارغة</span></label><label class="sc-chip" title="يقدّر ميل كل صفحة ويعدّلها فور استلامها"><input type="checkbox" id="sc-optdeskew"><span><i>📐</i>تصحيح الميل</span></label><label class="sc-chip" title="يقص الحواف الداكنة وظل غطاء السكانر حول الورقة فور استلام كل صفحة"><input type="checkbox" id="sc-optedges"><span><i>✂️</i>حذف الحواف</span></label><label class="sc-chip" title="يعادل الإضاءة ويزيل الظلال والخلفية الرمادية والنقاط وثقوب الدباسة (قد يبطئ المعالجة قليلاً)"><input type="checkbox" id="sc-optclean"><span><i>✨</i>تحسين الجودة</span></label></div></div><div class="sc-grp"><small>المستندات</small><div class="sc-chips"><label class="sc-chip" title="الورقة الفارغة أو تغيّر رقم الحاوية يبدأ مستنداً جديداً، فيُحفظ كل مستند في ملف مستقل"><input type="checkbox" id="sc-optsplit"><span><i>📑</i>فصل المستندات</span></label><label class="sc-chip" title="يقرأ كل صفحة ويسمّي الملف برقم الحاوية الصحيح (ISO 6346)"><input type="checkbox" id="sc-optauto"><span><i>🏷️</i>تسمية ذكية</span></label><label class="sc-chip" title="بعد كل مسح يسألك عن دفعة تالية فتمسح المستندات واحداً بعد الآخر"><input type="checkbox" id="sc-optcont"><span><i>🔁</i>مسح متواصل</span></label></div></div><div class="sc-grp"><small>المحتوى والبحث</small><div class="sc-chips"><label class="sc-chip" title="قراءة رقم الحاوية تلقائياً بعد المسح"><input type="checkbox" id="sc-optocr"><span><i>🔍</i>قراءة الحاوية</span></label><label class="sc-chip" title="يقرأ نص كل مستند (OCR) ويحفظه في سجل المجلد ليمكن البحث بمحتوى المستند من شاشة الأرشيف — يبطئ الحفظ"><input type="checkbox" id="sc-optindex"><span><i>🗂️</i>فهرسة النص</span></label><label class="sc-chip" title="يضيف نصاً مخفياً (إنجليزي وأرقام) للبحث داخل الملف — أبطأ في الحفظ"><input type="checkbox" id="sc-optsearch"><span><i>📄</i>PDF قابل للبحث</span></label></div></div></div></div>
   <div class="sc-sug" id="sc-sug" hidden></div>
   <div id="sc-pages" class="empty"></div>
  </div>
@@ -864,11 +940,34 @@
   <label class="sc-f">نص مميز بعد اسم المجلد (فارغ = ترقيم تلقائي)<input type="text" id="sc-ref" placeholder="مثال: 01 أو MSKU1234567"></label>
   <button class="sc-primary" id="sc-save" disabled>💾 حفظ في الأرشيف</button>
   <div class="sc-prev" id="sc-preview"></div>
- </div></div>`;
+ </div></div>
+ <div id="sc-camov" hidden>
+  <video id="sc-camv" autoplay playsinline muted></video>
+  <div class="cam-guide"></div><div id="sc-flash"></div>
+  <div class="cam-top"><button class="cam-x" id="sc-camclose" aria-label="إغلاق">✕</button><div class="cam-tt">ضع المستند داخل الإطار<small id="sc-camres"></small></div><div class="cam-cnt">📄 <b id="sc-camcnt">0</b></div></div>
+  <div id="sc-camerr" hidden></div><div id="sc-cambusy" hidden>⏳ جارٍ معالجة الصور…</div>
+  <div class="cam-bot">
+   <input type="range" id="sc-zoom" hidden aria-label="تقريب">
+   <div class="cam-ctl">
+    <button class="cam-b" id="sc-camdone" title="إنهاء">✓<small>تم</small></button>
+    <button class="cam-shutter" id="sc-snap" aria-label="التقاط"><i></i></button>
+    <div class="cam-side"><button class="cam-b" id="sc-torch" hidden title="الفلاش">🔦</button><button class="cam-b" id="sc-camflip" title="تبديل الكاميرا">🔄</button></div>
+   </div>
+   <img id="sc-camthumb" hidden alt="">
+  </div>
+ </div>`;
             doc.body.appendChild(root);
             // خيارات محفوظة
             const opt = (id, key, def) => { const el = $(id); el.checked = store.get(key, def) === '1'; el.onchange = () => store.set(key, el.checked ? '1' : '0'); };
             opt('#sc-optblank', 'scOptBlank', '1'); opt('#sc-optdeskew', 'scOptDeskew', '1'); opt('#sc-optedges', 'scOptEdges', '1'); opt('#sc-optocr', 'scOptOcr', '0'); opt('#sc-optsearch', 'scOptSearch', '0'); opt('#sc-optclean', 'scOptClean', '0'); opt('#sc-optindex', 'scOptIndex', '1'); opt('#sc-optsplit', 'scOptSplit', '0'); opt('#sc-optauto', 'scOptAuto', '0'); opt('#sc-optcont', 'scOptCont', '0');
+            { // شريط الخيارات القابل للطي
+                const bar = $('#sc-opts'), ids = ['blank','deskew','edges','clean','split','auto','cont','ocr','index','search'].map(x => '#sc-opt' + x);
+                const setOpen = o => { bar.classList.toggle('open', o); $('#sc-opts-t').setAttribute('aria-expanded', o ? 'true' : 'false'); store.set('scOptsOpen', o ? '1' : '0'); };
+                const upd = () => { const on = ids.map($).filter(e => e && e.checked); $('#sc-opts-n').textContent = on.length; $('#sc-opts-s').textContent = on.map(e => e.nextSibling.lastChild.textContent).join(' • ') || 'لا خيارات مفعّلة'; };
+                ids.forEach(id => $(id).addEventListener('change', upd));
+                $('#sc-opts-t').onclick = () => setOpen(!bar.classList.contains('open'));
+                bar.classList.toggle('open', store.get('scOptsOpen', '1') === '1'); $('#sc-opts-t').setAttribute('aria-expanded', bar.classList.contains('open') ? 'true' : 'false'); upd();
+            }
             ['#sc-optsplit', '#sc-optauto'].forEach(id => { const e = $(id), o0 = e.onchange; e.onchange = () => { o0(); if (needAnalysis()) analyzeAll(); render(); }; });
             $('#sc-type').value = store.get('scDocType', ''); $('#sc-type').onchange = () => { store.set('scDocType', $('#sc-type').value); if (needAnalysis()) analyzeAll(); updatePreview(); };
             const tabs = root.querySelectorAll('.sc-tabs button');
@@ -882,7 +981,10 @@
             $('#sc-close').onclick = closeIt; root.addEventListener('mousedown', e => { if (e.target === root) closeIt(); });
             $('#sc-pick').onclick = pickFolder; $('#sc-up').onclick = () => $('#sc-file').click();
             $('#sc-file').onchange = async e => { await addMany(Array.from(e.target.files), 'رفع ملفات'); e.target.value = ''; };
-            $('#sc-cam').onclick = camStart; $('#sc-camstop').onclick = camStop; $('#sc-snap').onclick = camSnap;
+            $('#sc-cam').onclick = camStart; $('#sc-snap').onclick = camSnap; $('#sc-camdone').onclick = camDone; $('#sc-camclose').onclick = camDone;
+            $('#sc-camflip').onclick = camFlip; $('#sc-torch').onclick = camTorch; $('#sc-zoom').oninput = camZoom;
+            $('#sc-native').onchange = async e => { const fs = Array.from(e.target.files); e.target.value = ''; if (fs.length) { await addImages(fs, 'كاميرا الهاتف'); toast('📱 تمت إضافة الصورة — صوّر أخرى أو احفظ'); } };
+            doc.addEventListener('visibilitychange', () => { const o = $('#sc-camov'); if (!o || o.hidden) return; if (doc.hidden) { if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; } else camOpenStream().catch(() => { }); });
             $('#sc-save').onclick = save; $('#sc-clear').onclick = () => { pages = []; $('#sc-sug').hidden = true; render(); };
             const dz = $('#sc-drop');
             dz.ondragover = e => { e.preventDefault(); dz.classList.add('over'); }; dz.ondragleave = () => dz.classList.remove('over');

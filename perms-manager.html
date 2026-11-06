@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>مدير المستخدمين والصلاحيات</title>
+<style>
+:root{--pri:#1e40af;--bd:#cbd5e1;--mu:#64748b;--bg:#f1f5f9}
+*{box-sizing:border-box}body{font-family:'Segoe UI',Tahoma,sans-serif;max-width:1000px;margin:24px auto;padding:0 14px;color:#0f172a;background:#fff;line-height:1.7}
+h1{margin:0 0 4px;font-size:22px}.sub{color:var(--mu);font-size:13px;margin:0 0 16px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:var(--bg);border-radius:12px;padding:12px;margin-bottom:14px}
+button,.btn{background:var(--pri);color:#fff;border:0;border-radius:9px;padding:9px 16px;font:700 13.5px inherit;cursor:pointer;display:inline-block}
+button.g,.btn.g{background:#fff;color:var(--pri);border:1.5px solid var(--pri)}button.r{background:#dc2626}button.s{padding:5px 11px;font-size:12px}
+input[type=text],input[type=password],select,textarea{width:100%;padding:8px 10px;border:1.5px solid var(--bd);border-radius:8px;font:14px inherit;background:#fff}
+textarea{min-height:80px;direction:ltr;font-family:Consolas,monospace;font-size:12px}
+.card{border:1.5px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:12px}.card.admin{border-color:#f59e0b;background:#fffbeb}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:10px}label.f{font-size:12px;color:var(--mu);font-weight:700;display:block}
+.perms{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:6px 0 10px}.perms label{display:inline-flex;gap:6px;align-items:center;font-weight:700;font-size:14px;cursor:pointer}
+.perms input{width:18px;height:18px}.tag{font-size:12px;border-radius:999px;padding:2px 10px;background:#dcfce7;color:#166534;font-weight:700}.tag.n{background:#e2e8f0;color:#475569}
+.hd{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}.hd b{font-size:16px}
+.note{font-size:12.5px;color:var(--mu)}.warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:10px;padding:10px 12px;font-size:13px;margin:10px 0}
+#out{display:none}#msg{font-weight:700}.ok{color:#15803d}.bad{color:#dc2626}
+</style></head><body>
+<h1>👥 مدير المستخدمين والصلاحيات</h1>
+<p class="sub">أداة تعمل على جهازك فقط (لا ترفع شيئاً). حمّل <code>users.json</code>، عدّل الصلاحيات وكلمات المرور ورمز GitHub لكل مستخدم، ثم نزّل الملف الجديد وارفعه إلى GitHub مكان القديم.</p>
+<div class="bar">
+ <button id="bGh">⬇️ جلب الملف الحالي من GitHub</button>
+ <label class="btn g">📂 فتح ملف users.json<input type="file" id="bFile" accept=".json,application/json" hidden></label>
+ <button class="g" id="bAdd">➕ مستخدم جديد</button>
+ <label style="margin-inline-start:auto;font-size:13px;font-weight:700;cursor:pointer"><input type="checkbox" id="oHash" checked> تشفير كلمات المرور الجديدة (SHA-256)</label>
+</div>
+<div id="list"></div>
+<div class="bar"><button id="bExp">💾 إنشاء users.json الجديد</button><span id="msg"></span></div>
+<textarea id="out" readonly></textarea>
+<div class="warn"><b>تذكير أمني:</b> الصلاحيات (مسح/رفع/حذف) تتحكم في واجهة البرنامج. الحماية الفعلية لـ GitHub هي <b>الرمز</b>: من لا رمز له لا يستطيع الكتابة إطلاقاً. أعطِ كل من يكتب رمزاً <b>Fine-grained</b> محصوراً في مستودع الأرشيف فقط بصلاحية Contents: Read and write، وأنشئ رمزاً منفصلاً لكل مستخدم ليسهل إلغاؤه. الرمز يُشفَّر بكلمة مرور المستخدم، فاستخدم كلمات مرور قوية، ولا يعمل فكه إلا عند فتح البرنامج عبر HTTPS. بعد تغيير كلمة المرور أعد إدخال الرمز لإعادة تشفيره. ملف users.json المنشور على GitHub يظهر للمستخدمين خلال بضع دقائق (تخزين GitHub المؤقت).</div>
+<script>
+function sha256Fallback(bytes) {
+    const K = new Uint32Array([
+        0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+        0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+        0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+        0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+        0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+        0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+        0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+        0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+    ]);
+    const H = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);
+    const len = bytes.length;
+    const padded = new Uint8Array(((len + 9 + 63) >> 6) << 6);
+    padded.set(bytes);
+    padded[len] = 0x80;
+    const view = new DataView(padded.buffer);
+    view.setUint32(padded.length - 8, Math.floor(len / 0x20000000), false);
+    view.setUint32(padded.length - 4, (len << 3) >>> 0, false);
+    const w = new Uint32Array(64);
+    const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+    for (let off = 0; off < padded.length; off += 64) {
+        for (let i = 0; i < 16; i++) w[i] = view.getUint32(off + i * 4, false);
+        for (let i = 16; i < 64; i++) {
+            const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+            const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+            w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+        }
+        let [a, b, c, d, e, f, g, h] = H;
+        for (let i = 0; i < 64; i++) {
+            const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+            const ch = (e & f) ^ (~e & g);
+            const t1 = (h + S1 + ch + K[i] + w[i]) >>> 0;
+            const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+            const maj = (a & b) ^ (a & c) ^ (b & c);
+            const t2 = (S0 + maj) >>> 0;
+            h = g; g = f; f = e; e = (d + t1) >>> 0;
+            d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+        }
+        H[0] += a; H[1] += b; H[2] += c; H[3] += d; H[4] += e; H[5] += f; H[6] += g; H[7] += h;
+    }
+    return Array.from(H).map(x => x.toString(16).padStart(8, '0')).join('');
+}
+async function sha256(text) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(text);
+    // الاتصال الآمن (HTTPS / localhost): دالة المتصفح الأصلية. غير ذلك (http داخل الشبكة): الحساب البرمجي المطابق
+    if (window.crypto && window.crypto.subtle) {
+        const hash = await crypto.subtle.digest('SHA-256', data);
+        return Array.from(new Uint8Array(hash))
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join('');
+    }
+    return sha256Fallback(data);
+}
+const USERS_URL='https://raw.githubusercontent.com/markingdchc/marking.dchc/main/users.json';
+const PERMS=[['scan','📠 مسح'],['upload','📤 رفع'],['delete','🗑️ حذف']];
+let users=[],extra=new WeakMap();
+const $=s=>document.querySelector(s),esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function say(t,c){const m=$('#msg');m.textContent=t||'';m.className=c||''}
+async function encToken(token,password){
+  if(!(window.crypto&&crypto.subtle))throw new Error('تشفير الرمز يتطلب فتح هذه الصفحة من ملف محلي أو HTTPS');
+  const salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12));
+  const km=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveKey']);
+  const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:150000,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['encrypt']);
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(token)));
+  const out=new Uint8Array(28+ct.length);out.set(salt,0);out.set(iv,16);out.set(ct,28);
+  let s='';out.forEach(b=>s+=String.fromCharCode(b));return btoa(s);
+}
+function setUsers(list){users=list.map(u=>({...u,perms:Array.isArray(u.perms)?u.perms.slice():[],lineIds:Array.isArray(u.lineIds)?u.lineIds.slice():[]}));render()}
+function render(){
+  $('#list').innerHTML=users.map((u,i)=>{
+    const adm=u.role==='admin',p=u.perms;
+    return `<div class="card ${adm?'admin':''}" data-i="${i}">
+ <div class="hd"><b>${adm?'👑':'👤'} ${esc(u.fullName||u.username||'مستخدم جديد')} <span class="note">(${esc(u.username||'')})</span></b>
+   <span>${u.tokenEnc?'<span class="tag">🔑 لديه رمز GitHub مشفّر</span>':'<span class="tag n">بلا رمز (لا كتابة على GitHub)</span>'} <button class="r s" data-a="del">حذف المستخدم</button></span></div>
+ <div class="row">
+  <div><label class="f">اسم المستخدم</label><input type="text" data-k="username" value="${esc(u.username)}" dir="ltr"></div>
+  <div><label class="f">الاسم الكامل</label><input type="text" data-k="fullName" value="${esc(u.fullName)}"></div>
+  <div><label class="f">الدور</label><select data-k="role"><option value="viewer" ${adm?'':'selected'}>مشاهد</option><option value="admin" ${adm?'selected':''}>مدير (كل الصلاحيات)</option></select></div>
+  <div><label class="f">الحالة</label><select data-k="status"><option value="active" ${u.status==='active'?'selected':''}>مفعّل</option><option value="disabled" ${u.status==='active'?'':'selected'}>معطّل</option></select></div>
+  <div><label class="f">الخطوط (مفصولة بفاصلة، * = الكل)</label><input type="text" data-k="lineIds" value="${esc(u.lineIds.join(', '))}" dir="ltr"></div>
+ </div>
+ ${adm?'<p class="note">المدير يملك كل الصلاحيات تلقائياً.</p>':`<div class="perms"><b>الصلاحيات:</b>${PERMS.map(([k,l])=>`<label><input type="checkbox" data-p="${k}" ${p.includes(k)||p.includes('*')?'checked':''}> ${l}</label>`).join('')}
+   <button class="g s" data-a="pv">مشاهدة فقط</button><button class="g s" data-a="pso">مسح ورفع</button><button class="g s" data-a="pall">كل الصلاحيات</button></div>`}
+ <div class="row">
+  <div><label class="f">كلمة مرور جديدة (فارغ = إبقاء الحالية)</label><input type="password" data-k="newpw" autocomplete="new-password" placeholder="••••••"></div>
+  <div><label class="f">رمز GitHub لهذا المستخدم (فارغ = إبقاء الحالي)</label><input type="password" data-k="token" autocomplete="off" placeholder="github_pat_…"></div>
+  <div><label class="f">&nbsp;</label>${u.tokenEnc?`<label style="font-weight:700;font-size:13px"><input type="checkbox" data-k="rmtok"> إزالة الرمز المخزَّن</label>`:''}</div>
+ </div></div>`}).join('')||'<p class="note">لا يوجد مستخدمون — حمّل الملف أو أضف مستخدماً.</p>';
+}
+$('#list').addEventListener('input',e=>{const c=e.target.closest('.card');if(!c)return;const u=users[+c.dataset.i],k=e.target.dataset.k;
+  if(e.target.dataset.p){const s=new Set(u.perms.filter(x=>x!=='*'));e.target.checked?s.add(e.target.dataset.p):s.delete(e.target.dataset.p);u.perms=[...s];return}
+  if(!k)return;
+  if(k==='lineIds')u.lineIds=e.target.value.split(',').map(x=>x.trim()).filter(Boolean);
+  else if(k==='rmtok')u._rmtok=e.target.checked;else if(k==='newpw'||k==='token')u['_'+k]=e.target.value;else u[k]=e.target.value;
+  if(k==='role'){render()}});
+$('#list').addEventListener('click',e=>{const b=e.target.closest('button[data-a]');if(!b)return;const c=b.closest('.card'),i=+c.dataset.i,u=users[i],a=b.dataset.a;
+  if(a==='del'){if(confirm('حذف المستخدم «'+(u.username||'')+'»؟'))users.splice(i,1)}
+  else if(a==='pv')u.perms=[];else if(a==='pso')u.perms=['scan','upload'];else if(a==='pall')u.perms=['scan','upload','delete'];
+  render()});
+$('#bAdd').onclick=()=>{users.push({id:Math.max(0,...users.map(u=>+u.id||0))+1,username:'',password:'',fullName:'',role:'viewer',lineIds:[],status:'active',createdAt:new Date().toISOString().slice(0,10),perms:[]});render();window.scrollTo(0,document.body.scrollHeight)};
+$('#bFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const j=JSON.parse(await f.text());setUsers(j.users||j);say('✅ تم تحميل '+users.length+' مستخدم','ok')}catch(x){say('❌ ملف غير صالح: '+x.message,'bad')}};
+$('#bGh').onclick=async()=>{try{const r=await fetch(USERS_URL+'?t='+Date.now());if(!r.ok)throw new Error('HTTP '+r.status);setUsers((await r.json()).users);say('✅ تم الجلب من GitHub ('+users.length+' مستخدم)','ok')}catch(x){say('❌ تعذّر الجلب: '+x.message+' — استخدم «فتح ملف»','bad')}};
+$('#bExp').onclick=async()=>{
+  try{
+    const names=new Set(),out=[];
+    for(const u of users){
+      const un=String(u.username||'').trim();if(!un)throw new Error('يوجد مستخدم بلا اسم مستخدم');
+      if(names.has(un.toLowerCase()))throw new Error('اسم المستخدم مكرر: '+un);names.add(un.toLowerCase());
+      const o={...u};['_newpw','_token','_rmtok'].forEach(k=>delete o[k]);
+      o.username=un;o.fullName=String(u.fullName||un).trim();
+      if(o.role==='admin')delete o.perms;else o.perms=u.perms.includes('*')?['*']:PERMS.map(p=>p[0]).filter(k=>u.perms.includes(k));
+      let plain=null;
+      if(u._newpw){plain=u._newpw;o.password=$('#oHash').checked?'sha256:'+await sha256(plain):plain}
+      else if(!o.password)throw new Error('المستخدم «'+un+'» بلا كلمة مرور');
+      else if(!String(o.password).startsWith('sha256:'))plain=o.password;
+      if(u._rmtok)delete o.tokenEnc;
+      if(u._token){
+        if(plain==null)throw new Error('لتشفير رمز «'+un+'» اكتب كلمة مرور المستخدم في خانة «كلمة مرور جديدة» (كلمته الحالية مشفّرة ولا يمكن قراؤها)');
+        const t=u._token.trim();if(!/^(github_pat_|ghp_)/.test(t))throw new Error('رمز «'+un+'» غير صالح: يجب أن يبدأ بـ github_pat_ أو ghp_');
+        o.tokenEnc=await encToken(t,plain);
+      }else if(u._newpw&&u.tokenEnc&&!u._rmtok)throw new Error('غيّرت كلمة مرور «'+un+'» وله رمز مشفّر بالكلمة القديمة: أعد إدخال الرمز، أو اختر «إزالة الرمز المخزَّن»');
+      out.push(o);
+    }
+    const text=JSON.stringify({users:out},null,2)+'\n';
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json'}));a.download='users.json';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500);
+    $('#out').value=text;$('#out').style.display='block';
+    say('✅ تم تنزيل users.json — ارفعه إلى GitHub مكان القديم','ok');
+    setUsers(out);
+  }catch(x){say('❌ '+x.message,'bad')}
+};
+render();
+</script></body></html>

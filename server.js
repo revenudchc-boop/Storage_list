@@ -86,6 +86,7 @@ app.use(express.static('\\\\10.0.182.128\\database\\app'));
 app.use((req, res, next) => {
     if (req.path === '/api/ping') return next();
     if (req.path === '/api/check-access') return next();
+    if (req.path === '/api/users') return next();      // المستخدمون: يلزم قبل تسجيل الدخول (الملف نفسه علني على GitHub)
     
     const apiKey = req.headers['x-api-key'] || req.query.apiKey;
     if (CONFIG.API_KEY && apiKey !== CONFIG.API_KEY) {
@@ -93,6 +94,49 @@ app.use((req, res, next) => {
     }
     next();
 });
+
+// <USERS-SYNC>
+// ============================================================
+// 👥 مستخدمو البرنامج للدخول دون إنترنت
+//   - يجلب الخادم users.json من GitHub عند التشغيل وكل 30 دقيقة (عند توفر الإنترنت) ويحفظه في users.cache.json
+//   - البرنامج يطلب /api/users عند فشل GitHub، فيمكن تسجيل الدخول داخل الشبكة بلا إنترنت
+//   - إن لم توجد نسخة محفوظة يُستخدم users.json الموجود في مجلد التطبيق أو بجانب الخادم
+// ============================================================
+const USERS_REMOTE = process.env.USERS_REMOTE_URL || 'https://raw.githubusercontent.com/markingdchc/marking.dchc/main/users.json';
+const USERS_CACHE = path.join(__dirname, 'users.cache.json');
+const APP_DIRS = ['\\\\10.0.182.128\\database\\app', __dirname];
+function fetchText(url, ms) {
+    return new Promise((resolve, reject) => {
+        const mod = url.startsWith('https') ? require('https') : require('http');
+        const req = mod.get(url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(), { timeout: ms || 6000 }, (r) => {
+            if (r.statusCode !== 200) { r.resume(); return reject(new Error('HTTP ' + r.statusCode)); }
+            let b = ''; r.setEncoding('utf8'); r.on('data', d => b += d); r.on('end', () => resolve(b));
+        });
+        req.on('timeout', () => req.destroy(new Error('timeout'))); req.on('error', reject);
+    });
+}
+async function refreshUsersCache() {
+    try {
+        const txt = await fetchText(USERS_REMOTE), j = JSON.parse(txt);
+        if (!j || !Array.isArray(j.users) || !j.users.length) throw new Error('ملف غير صالح');
+        await fs.writeFile(USERS_CACHE + '.tmp', JSON.stringify(j)); await fs.rename(USERS_CACHE + '.tmp', USERS_CACHE);
+        console.log('👥 تم تحديث نسخة المستخدمين من GitHub (' + j.users.length + ')');
+        return true;
+    } catch (e) { console.log('👥 تعذّر تحديث المستخدمين من GitHub (' + e.message + ') — تُستخدم النسخة المحفوظة'); return false; }
+}
+async function readLocalUsers() {
+    for (const f of [USERS_CACHE, ...APP_DIRS.map(d => path.join(d, 'users.json'))]) {
+        try { const j = JSON.parse(await fs.readFile(f, 'utf8')); if (j && Array.isArray(j.users) && j.users.length) return { users: j.users, source: path.basename(f) }; } catch (e) { }
+    }
+    return null;
+}
+app.get('/api/users', async (req, res) => {
+    const r = await readLocalUsers();
+    if (!r) return res.status(404).json({ error: 'لا توجد نسخة مستخدمين محلية. ضع users.json بجانب server.js أو شغّل الخادم مرة واحدة مع الإنترنت.' });
+    res.set('Cache-Control', 'no-store'); res.json(r);
+});
+refreshUsersCache(); setInterval(refreshUsersCache, 30 * 60 * 1000).unref();
+// </USERS-SYNC>
 
 // ============================================================
 // 🔍 فحص الحالة
