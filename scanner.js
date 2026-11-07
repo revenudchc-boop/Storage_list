@@ -432,7 +432,7 @@
             try {
                 bridgeInfo = await bj('/ping');
                 if (bridgeInfo.allowed === false) { bridgeOk = false; devices = []; $('#sc-dev').innerHTML = '<option value="">—</option>'; st.innerHTML = '<span class="sc-dot warn"></span> الوسيط يعمل لكن هذا الموقع غير مسموح'; const v = $('#sc-ver'); v.hidden = false; const og = bridgeInfo.origin || window.location.origin; v.innerHTML = og === 'null' ? 'أنت تفتح البرنامج من ملف على الجهاز (file://)، ويُرسَل للوسيط باسم <b dir="ltr">"null"</b>. أضف <b dir="ltr">"null"</b> (بعلامتي الاقتباس) إلى <b>allowedOrigins</b> في ملف <b>scan-bridge.json</b> ثم شغّل <b>stop-scan-bridge.bat</b> ثم <b>install-autostart.bat</b>.' : 'أضف عنوان الموقع <b dir="ltr">' + esc(og) + '</b> إلى <b>allowedOrigins</b> في ملف <b>scan-bridge.json</b> بجانب الوسيط ثم أعد تشغيله (stop-scan-bridge.bat ثم install-autostart.bat).'; $('#sc-bhelp').hidden = true; return; }
-                bridgeOk = true;
+                bridgeOk = true; if (/^bridge:/.test(lastErr)) lastErr = '';
                 devices = (await bj('/devices', { timeout: 60000 })).devices;
                 $('#sc-dev').innerHTML = devices.length ? devices.map(x => '<option value="' + esc(x.id) + '" data-e="' + (x.engine || '') + '">' + esc(x.name) + '</option>').join('') : '<option value="">— لا توجد أجهزة —</option>';
                 const last = store.get('scanDevice', ''); if (last && devices.some(x => x.id === last)) $('#sc-dev').value = last;
