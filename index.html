@@ -4,12 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>تقرير الحاويات</title>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a3d62">
+<script src="web/js/libs.js?v=1"></script>
+<script>
+(function(){try{if(!("serviceWorker" in navigator))return;
+  if(localStorage.getItem("disableSW")==="1"){navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(x){x.unregister();});});return;}
+  var h=location.hostname;if(location.protocol==="https:"||h==="localhost"||h==="127.0.0.1")
+    window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){});});
+}catch(e){}})();
+</script>
     <style>
         * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body { background: #f0f2f5; margin: 0; padding: 20px; }
@@ -952,14 +956,16 @@
     </div>
 </div>
 
-<link rel="stylesheet" href="dashboard.css?v=4.3">
-<script src="auth.js"></script>
-<script src="local-server.js"></script>
-<script src="archive.js"></script>
-<script src="script.js"></script>
-<script src="pdf-font.js?v=5.1"></script>
-<script src="pdf-text.js?v=5.1"></script>
-<script src="scanner.js?v=3.5"></script>
-<script src="dashboard.js?v=4.3"></script>
+<link rel="stylesheet" href="web/css/dashboard.css?v=4.3">
+<script src="web/js/auth.js?v=2"></script>
+<script src="web/js/users-admin.js?v=2"></script>
+<script src="web/js/local-server.js"></script>
+<script src="web/js/offline.js?v=1"></script>
+<script src="web/js/archive.js?v=2"></script>
+<script src="web/js/script.js"></script>
+<script src="web/js/pdf-font.js?v=5.1"></script>
+<script src="web/js/pdf-text.js?v=5.1"></script>
+<script src="web/js/scanner.js?v=3.7"></script>
+<script src="web/js/dashboard.js?v=4.4"></script>
 </body>
 </html>

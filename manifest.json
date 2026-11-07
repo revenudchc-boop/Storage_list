@@ -1,0 +1,13 @@
+{
+  "name": "أرشيف الحاويات",
+  "short_name": "الأرشيف",
+  "description": "تقرير الحاويات وأرشيف السفن",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "dir": "rtl",
+  "lang": "ar",
+  "background_color": "#0a3d62",
+  "theme_color": "#0a3d62",
+  "icons": [{ "src": "web/img/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
