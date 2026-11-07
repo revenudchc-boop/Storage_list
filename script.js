@@ -287,22 +287,7 @@ function initializeAllSelects() {
     }
 }
 // ========== دوال حفظ وتحميل الملف ==========
-function saveFileToLocalStorage(fileData, fileName) {
-    try {
-        // تقدير حجم البيانات (base64)
-        const sizeInMB = fileData.length * 3 / 4 / 1024 / 1024;
-        if (sizeInMB > 5) {
-            console.warn(`⚠️ الملف كبير جداً (${sizeInMB.toFixed(1)} ميجابايت)، لن يتم حفظه في localStorage.`);
-            return; // لا نحفظ، ولكن لا نرمي خطأ
-        }
-        localStorage.setItem("savedExcelFile", fileData);
-        localStorage.setItem("savedExcelFileName", fileName);
-        console.log("✅ تم حفظ الملف:", fileName);
-    } catch(e) {
-        console.warn("⚠️ فشل حفظ الملف في localStorage:", e.message);
-        // لا نرمي خطأ، نستمر في التنفيذ
-    }
-}
+// (حُذفت نسخة saveFileToLocalStorage المكررة؛ النسخة المعتمدة أدناه)
 
 
 // دالة معالجة الملف عند التحميل
@@ -3751,25 +3736,25 @@ document.getElementById("exportBtn1").onclick = () => {
     let ws = XLSX.utils.json_to_sheet(currentData1);
     let wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "TRSHP_EXPRT");
-    XLSX.writeFile(wb, `تقرير_TRSHP_EXPRT_${new Date().toISOString().slice(0,19)}.xlsx`);
+    XLSX.writeFile(wb, `تقرير_TRSHP_EXPRT_${new Date().toISOString().slice(0,19)}.xlsx`, { compression: true });
 };
 document.getElementById("exportBtn2").onclick = () => {
     let ws = XLSX.utils.json_to_sheet(currentData2);
     let wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "STRGE_EXPRT_IMPRT");
-    XLSX.writeFile(wb, `تقرير_STRGE_EXPRT_IMPRT_${new Date().toISOString().slice(0,19)}.xlsx`);
+    XLSX.writeFile(wb, `تقرير_STRGE_EXPRT_IMPRT_${new Date().toISOString().slice(0,19)}.xlsx`, { compression: true });
 };
 document.getElementById("exportBtn3").onclick = () => {
     let ws = XLSX.utils.json_to_sheet(currentData3);
     let wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "EXPRT_ONLY");
-    XLSX.writeFile(wb, `تقرير_EXPRT_ONLY_${new Date().toISOString().slice(0,19)}.xlsx`);
+    XLSX.writeFile(wb, `تقرير_EXPRT_ONLY_${new Date().toISOString().slice(0,19)}.xlsx`, { compression: true });
 };
 document.getElementById("exportBtn4").onclick = () => {
     let ws = XLSX.utils.json_to_sheet(currentData4);
     let wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "EMPTY_STRGE_IMPRT");
-    XLSX.writeFile(wb, `تقرير_EMPTY_STRGE_IMPRT_${new Date().toISOString().slice(0,19)}.xlsx`);
+    XLSX.writeFile(wb, `تقرير_EMPTY_STRGE_IMPRT_${new Date().toISOString().slice(0,19)}.xlsx`, { compression: true });
 };
 
 // زر تصدير جميع التبويبات
@@ -3915,7 +3900,7 @@ if (currentData7 && currentData7.length > 0) {
         }
         
         let fileName = `تقرير_جميع_التبويبات_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.xlsx`;
-        XLSX.writeFile(wb, fileName);
+        XLSX.writeFile(wb, fileName, { compression: true });
         
         localStorage.setItem("lastExportFileName", fileName);
         document.getElementById("footerMsg").innerHTML = `✅ تم تصدير جميع التبويبات إلى ملف: ${fileName}`;
@@ -4059,7 +4044,7 @@ function exportAllWithPath() {
         }
         
         let fileName = `تقرير_جميع_التبويبات_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.xlsx`;
-        XLSX.writeFile(wb, fileName);
+        XLSX.writeFile(wb, fileName, { compression: true });
         
         localStorage.setItem("lastExportFileName", fileName);
         document.getElementById("footerMsg").innerHTML = `✅ تم التصدير إلى: ${fileName}`;
@@ -5736,7 +5721,7 @@ document.getElementById("exportBtn5").onclick = () => {
         let ws = XLSX.utils.json_to_sheet(currentData5);
         let wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "TRSHP_ONLY");
-        XLSX.writeFile(wb, `تقرير_TRSHP_ONLY_${new Date().toISOString().slice(0,19)}.xlsx`);
+        XLSX.writeFile(wb, `تقرير_TRSHP_ONLY_${new Date().toISOString().slice(0,19)}.xlsx`, { compression: true });
     } else {
         alert("لا توجد بيانات للتصدير في تبويب TRSHP فقط");
     }
@@ -5974,7 +5959,7 @@ document.getElementById("exportBtn5").onclick = () => {
     let ws = XLSX.utils.json_to_sheet(currentData5);
     let wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "TRSHP_ONLY");
-    XLSX.writeFile(wb, `تقرير_TRSHP_ONLY_${new Date().toISOString().slice(0,19)}.xlsx`);
+    XLSX.writeFile(wb, `تقرير_TRSHP_ONLY_${new Date().toISOString().slice(0,19)}.xlsx`, { compression: true });
 };
 
 function processAndDisplay6() {
@@ -7087,7 +7072,7 @@ document.getElementById("exportBtn7").onclick = function() {
         let ws = XLSX.utils.json_to_sheet(currentData7);
         let wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "IMPRT_FORWARD");
-        XLSX.writeFile(wb, `تقرير_IMPRT_FORWARD_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.xlsx`);
+        XLSX.writeFile(wb, `تقرير_IMPRT_FORWARD_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.xlsx`, { compression: true });
     } else {
         alert("لا توجد بيانات للتصدير");
     }
@@ -7379,7 +7364,7 @@ document.getElementById("exportBtn6").onclick = () => {
     let ws = XLSX.utils.json_to_sheet(currentData6);
     let wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "STRGE_EXPRT_ONLY");
-    XLSX.writeFile(wb, `تقرير_STRGE_EXPRT_ONLY_${new Date().toISOString().slice(0,19)}.xlsx`);
+    XLSX.writeFile(wb, `تقرير_STRGE_EXPRT_ONLY_${new Date().toISOString().slice(0,19)}.xlsx`, { compression: true });
 };
 
 function openColumnModalTab6() {
@@ -7791,7 +7776,7 @@ document.getElementById("exportBtn8").addEventListener("click", function() {
         let ws = XLSX.utils.json_to_sheet(currentData8);
         let wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "STORAGE_FINALOUT");
-        XLSX.writeFile(wb, `تقرير_Storage_Finalout_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.xlsx`);
+        XLSX.writeFile(wb, `تقرير_Storage_Finalout_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.xlsx`, { compression: true });
     } else {
         alert("⚠️ لا توجد بيانات للتصدير في تبويب Storage Finalout");
     }
@@ -10715,44 +10700,7 @@ function compareWithBillingFile(containers, billingData) {
     };
 }
 
-// ============================================================
-// 🔑 إعداد GitHub Token
-// ============================================================
-function setupGitHubToken() {
-    let currentToken = localStorage.getItem("github_token") || "";
-    
-    let message = "🔑 إعداد GitHub Token\n\n";
-    if (currentToken) {
-        message += "يوجد رمز محفوظ حالياً.\n";
-        message += "هل تريد استبداله؟\n\n";
-        message += "اضغط OK لإدخال رمز جديد، أو Cancel للاحتفاظ بالحالي.";
-        if (!confirm(message)) {
-            return;
-        }
-    }
-    
-    let token = prompt("الصق GitHub Personal Access Token هنا:\n\n(يبدأ بـ github_pat_ أو ghp_)");
-    
-    if (!token) return;
-    
-    token = token.trim();
-    if (!token.startsWith("github_pat_") && !token.startsWith("ghp_")) {
-        alert("⚠️ الرمز غير صالح. يجب أن يبدأ بـ github_pat_ أو ghp_");
-        return;
-    }
-    
-    localStorage.setItem("github_token", token);
-    alert("✅ تم حفظ الرمز بنجاح!");
-    console.log("✅ GitHub Token محفوظ");
-}
-
-// ربط الزر
-document.addEventListener("DOMContentLoaded", function() {
-    let btn = document.getElementById("setTokenBtn");
-    if (btn) {
-        btn.addEventListener("click", setupGitHubToken);
-    }
-});
+// (حُذفت نسخة setupGitHubToken المكررة؛ النسخة المعتمدة أدناه)
 
 // ============================================================
 // 📤 رفع الملف إلى GitHub
@@ -10897,6 +10845,7 @@ async function saveFileToGitHub() {
         let names = buildArchiveFolderName();
         const extension = originalFileName.split('.').pop() || "xlsx";
         const newFileName = `${names.reportBaseName}.${extension}`;
+
         
         // 🆕 المسار الجديد: الأرشيف فقط
         const filePath = `archive/${names.folderName}/${newFileName}`;

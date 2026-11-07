@@ -2075,9 +2075,10 @@ async function checkShipArchive(shipName, shipDate) {
 }
 
 function showArchiveNotification(shipName, shipDate, matches) {
-    // 🆕 إخفاء الإشعار إذا كان المستخدم ليس مديراً (Viewer)
+    // يظهر الإشعار للمدير ولمن لديه أي صلاحية كتابة (مسح/رفع/حذف)؛ المشاهد بلا صلاحيات لا يراه
     const user = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
-    if (!user || user.role !== 'admin') {
+    const canSee = user && (user.role === 'admin' || (typeof hasPerm === 'function' && ['scan', 'upload', 'delete'].some(p => hasPerm(p))));
+    if (!canSee) {
         hideArchiveNotification();
         return;
     }
@@ -2118,7 +2119,7 @@ function showArchiveNotification(shipName, shipDate, matches) {
                 </div>
             </div>
         </div>
-        <button onclick="openFilteredArchive('${shipName}', '${shipDate || ''}')" 
+        <button onclick="openFilteredArchive(${JSON.stringify(String(shipName)).replace(/"/g, '&quot;')}, ${JSON.stringify(String(shipDate || '')).replace(/"/g, '&quot;')})" 
                 style="background: #28a745; color: white; border: none; 
                        padding: 8px 20px; border-radius: 20px; cursor: pointer; 
                        font-weight: bold; font-size: 14px;">

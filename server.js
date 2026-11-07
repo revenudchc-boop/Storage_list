@@ -356,6 +356,9 @@ app.listen(CONFIG.PORT, '0.0.0.0', () => {
     console.log('  📡 المنفذ:           ' + CONFIG.PORT);
     console.log('  📁 مجلد الأرشيف:     ' + CONFIG.ARCHIVE_PATH);
     console.log('  🔐 API Key:          ' + (CONFIG.API_KEY ? 'مفعّل' : 'معطّل'));
+    if (CONFIG.API_KEY === 'your-secret-key-change-me') {
+        console.log('  ⚠️  تحذير: مفتاح API ما زال القيمة الافتراضية — غيّره في CONFIG.API_KEY (وفي local-server.js بنفس القيمة).');
+    }
     console.log('');
     console.log('  🌐 روابط الوصول:');
     
