@@ -1,0 +1,414 @@
+// ============================================================
+// 🖥️ خادم الأرشيف المحلي (LAN)
+// ============================================================
+
+const express = require('express');
+const cors = require('cors');
+const fs = require('fs').promises;
+const path = require('path');
+const { execSync } = require('child_process');
+
+// ============================================================
+// ⚙️ الإعدادات
+// ============================================================
+const CONFIG = {
+    PORT: 3000,
+    ARCHIVE_PATH: '\\\\10.0.182.128\\database\\archive',
+    MAX_FILE_SIZE: 50 * 1024 * 1024,
+    ALLOWED_EXTENSIONS: ['.pdf', '.xls', '.xlsx', '.doc', '.docx', '.jpg', '.jpeg', '.png'],
+    API_KEY: 'your-secret-key-change-me',
+    NAS_USER: '',
+    NAS_PASSWORD: ''
+};
+
+// ============================================================
+// 🔗 ربط مشاركة الشبكة تلقائياً
+// ============================================================
+function connectToNAS() {
+    try {
+        console.log('🔗 جاري ربط مشاركة الشبكة...');
+        
+        try {
+            execSync(`net use "${CONFIG.ARCHIVE_PATH}" /delete /y`, { stdio: 'ignore' });
+        } catch (e) { /* لا مشكلة إن لم يوجد ربط قديم */ }
+        
+        let cmd;
+        if (CONFIG.NAS_USER && CONFIG.NAS_PASSWORD) {
+            cmd = `net use "${CONFIG.ARCHIVE_PATH}" /user:"${CONFIG.NAS_USER}" "${CONFIG.NAS_PASSWORD}" /persistent:yes`;
+        } else {
+            cmd = `net use "${CONFIG.ARCHIVE_PATH}" /persistent:yes`;
+        }
+        
+        try {
+            execSync(cmd, { stdio: 'pipe' });
+            console.log('✅ تم ربط مشاركة الشبكة بنجاح');
+        } catch (e) {
+            console.log('ℹ️ المشاركة متصلة مسبقاً أو لا تحتاج بيانات دخول');
+        }
+        
+        try {
+            execSync(`dir "${CONFIG.ARCHIVE_PATH}"`, { stdio: 'pipe' });
+            console.log('✅ اختبار الوصول ناجح');
+            return true;
+        } catch (e) {
+            console.log('❌ لا يمكن الوصول للمجلد');
+            return false;
+        }
+        
+    } catch (error) {
+        console.log('⚠️ خطأ:', error.message);
+        return false;
+    }
+}
+
+const app = express();
+app.use(cors());
+app.use(express.json({ limit: '60mb' }));
+
+// ============================================================
+// 🆕 خدمة ملفات التطبيق (مرة واحدة فقط)
+// ============================================================
+app.use(express.static('\\\\10.0.182.128\\database\\app'));
+
+// 🆕 إنشاء مجلد الأرشيف تلقائياً
+(async () => {
+    try {
+        await fs.mkdir(CONFIG.ARCHIVE_PATH, { recursive: true });
+        console.log('✅ مجلد الأرشيف جاهز:', CONFIG.ARCHIVE_PATH);
+    } catch (e) {
+        console.log('⚠️ تعذّر إنشاء مجلد الأرشيف:', e.message);
+    }
+})();
+
+// ============================================================
+// 🔐 Middleware للتحقق من API Key
+// ============================================================
+app.use((req, res, next) => {
+    if (req.path === '/api/ping') return next();
+    if (req.path === '/api/check-access') return next();
+    if (req.path === '/api/users') return next();      // المستخدمون: يلزم قبل تسجيل الدخول (الملف نفسه علني على GitHub)
+    
+    const apiKey = req.headers['x-api-key'] || req.query.apiKey;
+    if (CONFIG.API_KEY && apiKey !== CONFIG.API_KEY) {
+        return res.status(401).json({ error: 'مفتاح غير صحيح' });
+    }
+    next();
+});
+
+// <USERS-SYNC>
+// ============================================================
+// 👥 مستخدمو البرنامج للدخول دون إنترنت
+//   - يجلب الخادم users.json من GitHub عند التشغيل وكل 30 دقيقة (عند توفر الإنترنت) ويحفظه في users.cache.json
+//   - البرنامج يطلب /api/users عند فشل GitHub، فيمكن تسجيل الدخول داخل الشبكة بلا إنترنت
+//   - إن لم توجد نسخة محفوظة يُستخدم users.json الموجود في مجلد التطبيق أو بجانب الخادم
+// ============================================================
+const USERS_REMOTE = process.env.USERS_REMOTE_URL || 'https://raw.githubusercontent.com/markingdchc/marking.dchc/main/users.json';
+const USERS_CACHE = path.join(__dirname, 'users.cache.json');
+const APP_DIRS = ['\\\\10.0.182.128\\database\\app', path.join(__dirname, '..'), __dirname]; // مجلد البرنامج الأب (حيث users.json بعد التنظيم) ثم مجلد الخادم
+function fetchText(url, ms) {
+    return new Promise((resolve, reject) => {
+        const mod = url.startsWith('https') ? require('https') : require('http');
+        const req = mod.get(url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(), { timeout: ms || 6000 }, (r) => {
+            if (r.statusCode !== 200) { r.resume(); return reject(new Error('HTTP ' + r.statusCode)); }
+            let b = ''; r.setEncoding('utf8'); r.on('data', d => b += d); r.on('end', () => resolve(b));
+        });
+        req.on('timeout', () => req.destroy(new Error('timeout'))); req.on('error', reject);
+    });
+}
+async function refreshUsersCache() {
+    try {
+        const txt = await fetchText(USERS_REMOTE), j = JSON.parse(txt);
+        if (!j || !Array.isArray(j.users) || !j.users.length) throw new Error('ملف غير صالح');
+        await fs.writeFile(USERS_CACHE + '.tmp', JSON.stringify(j)); await fs.rename(USERS_CACHE + '.tmp', USERS_CACHE);
+        console.log('👥 تم تحديث نسخة المستخدمين من GitHub (' + j.users.length + ')');
+        return true;
+    } catch (e) { console.log('👥 تعذّر تحديث المستخدمين من GitHub (' + e.message + ') — تُستخدم النسخة المحفوظة'); return false; }
+}
+async function readLocalUsers() {
+    for (const f of [USERS_CACHE, ...APP_DIRS.map(d => path.join(d, 'users.json'))]) {
+        try { const j = JSON.parse(await fs.readFile(f, 'utf8')); if (j && Array.isArray(j.users) && j.users.length) return { users: j.users, source: path.basename(f) }; } catch (e) { }
+    }
+    return null;
+}
+app.get('/api/users', async (req, res) => {
+    const r = await readLocalUsers();
+    if (!r) return res.status(404).json({ error: 'لا توجد نسخة مستخدمين محلية. ضع users.json بجانب server.js أو شغّل الخادم مرة واحدة مع الإنترنت.' });
+    res.set('Cache-Control', 'no-store'); res.json(r);
+});
+refreshUsersCache(); setInterval(refreshUsersCache, 30 * 60 * 1000).unref();
+// </USERS-SYNC>
+
+// ============================================================
+// 🔍 فحص الحالة
+// ============================================================
+app.get('/api/ping', (req, res) => {
+    res.json({
+        status: 'ok',
+        version: '1.0.0',
+        archivePath: CONFIG.ARCHIVE_PATH,
+        timestamp: new Date().toISOString()
+    });
+});
+
+// ============================================================
+// 📥 فحص الوصول لمجلد الأرشيف
+// ============================================================
+app.get('/api/check-access', async (req, res) => {
+    try {
+        await fs.access(CONFIG.ARCHIVE_PATH);
+        let stats = await fs.stat(CONFIG.ARCHIVE_PATH);
+        res.json({
+            success: true,
+            exists: true,
+            isDirectory: stats.isDirectory(),
+            path: CONFIG.ARCHIVE_PATH
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            path: CONFIG.ARCHIVE_PATH
+        });
+    }
+});
+
+// ============================================================
+// 📂 قائمة المجلدات (السفن)
+// ============================================================
+app.get('/api/archive/list', async (req, res) => {
+    try {
+        const entries = await fs.readdir(CONFIG.ARCHIVE_PATH, { withFileTypes: true });
+        const folders = [];
+        
+        for (const entry of entries) {
+            if (!entry.isDirectory()) continue;
+            
+            const folderPath = path.join(CONFIG.ARCHIVE_PATH, entry.name);
+            let files = [];
+            
+            try {
+                const fileEntries = await fs.readdir(folderPath, { withFileTypes: true });
+                for (const fe of fileEntries) {
+                    if (!fe.isFile() || fe.name === '_info.json') continue;
+                    
+                    const filePath = path.join(folderPath, fe.name);
+                    const stats = await fs.stat(filePath);
+                    
+                    files.push({
+                        name: fe.name,
+                        size: stats.size,
+                        modified: stats.mtime,
+                        created: stats.birthtime,
+                        url: `/api/archive/file/${encodeURIComponent(entry.name)}/${encodeURIComponent(fe.name)}`
+                    });
+                }
+            } catch (e) {
+                console.warn('خطأ في قراءة مجلد:', entry.name, e.message);
+            }
+            
+            folders.push({
+                name: entry.name,
+                files: files,
+                filesCount: files.length
+            });
+        }
+        
+        folders.sort((a, b) => b.name.localeCompare(a.name));
+        res.json({ success: true, folders });
+        
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ============================================================
+// 🧾 سجل العمليات (audit): سطر JSON لكل إضافة/استبدال/حذف في audit.log (لا يُسجَّل الفتح) بجوار الخادم
+// ============================================================
+const AUDIT_FILE = path.join(__dirname, 'audit.log');
+function auditUser(req) {
+    try { return decodeURIComponent(req.headers['x-user'] || req.query.user || ''); } catch (e) { return ''; }
+}
+function audit(action, folder, file, req) {
+    try {
+        const line = JSON.stringify({ t: new Date().toISOString(), a: action, folder, file, u: auditUser(req), ip: req.ip || '' }) + '\n';
+        require('fs').appendFile(AUDIT_FILE, line, () => { });
+    } catch (e) { }
+}
+
+app.get('/api/archive/history/:folder/:file', async (req, res) => {
+    try {
+        const folder = decodeURIComponent(req.params.folder), file = decodeURIComponent(req.params.file);
+        let txt = '';
+        try { txt = await fs.readFile(AUDIT_FILE, 'utf8'); } catch (e) { }
+        if (txt.length > 20 * 1024 * 1024) txt = txt.slice(-20 * 1024 * 1024);
+        const events = [];
+        for (const l of txt.split('\n')) {
+            if (!l) continue;
+            try { const o = JSON.parse(l); if (o.folder === folder && o.file === file) events.push({ t: o.t, a: o.a, u: o.u }); } catch (e) { }
+        }
+        res.json({ success: true, events: events.slice(-200) });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ============================================================
+// 📄 قراءة/تحميل ملف
+// ============================================================
+app.get('/api/archive/file/:folder/:file', async (req, res) => {
+    try {
+        const folderName = decodeURIComponent(req.params.folder);
+        const fileName = decodeURIComponent(req.params.file);
+        
+        if (folderName.includes('..') || fileName.includes('..')) {
+            return res.status(400).json({ error: 'مسار غير صالح' });
+        }
+        
+        const filePath = path.join(CONFIG.ARCHIVE_PATH, folderName, fileName);
+        const stats = await fs.stat(filePath);
+        
+        res.setHeader('Content-Length', stats.size);
+        res.setHeader('Content-Type', getMimeType(fileName));
+        res.setHeader('Content-Disposition', 'inline; filename="' + encodeURIComponent(fileName) + '"');
+        
+        const fileStream = require('fs').createReadStream(filePath);
+        fileStream.pipe(res);
+        
+    } catch (error) {
+        res.status(404).json({ success: false, error: 'الملف غير موجود: ' + error.message });
+    }
+});
+
+// ============================================================
+// 📤 رفع ملف جديد
+// ============================================================
+app.post('/api/archive/upload', async (req, res) => {
+    try {
+        const { folderName, fileName, base64Data } = req.body;
+        
+        if (!folderName || !fileName || !base64Data) {
+            return res.status(400).json({ error: 'بيانات ناقصة' });
+        }
+        
+        const ext = '.' + fileName.toLowerCase().split('.').pop();
+        if (!CONFIG.ALLOWED_EXTENSIONS.includes(ext)) {
+            return res.status(400).json({ error: 'نوع الملف غير مسموح: ' + ext });
+        }
+        
+        const size = Buffer.from(base64Data, 'base64').length;
+        if (size > CONFIG.MAX_FILE_SIZE) {
+            return res.status(400).json({ error: 'الملف كبير جداً (الأقصى 50 MB)' });
+        }
+        
+        const safeFolder = sanitizeName(folderName);
+        const safeFile = sanitizeName(fileName);
+        
+        const folderPath = path.join(CONFIG.ARCHIVE_PATH, safeFolder);
+        const filePath = path.join(folderPath, safeFile);
+        
+        await fs.mkdir(folderPath, { recursive: true });
+        const existed = await fs.access(filePath).then(() => true, () => false);
+        
+        const buffer = Buffer.from(base64Data, 'base64');
+        await fs.writeFile(filePath, buffer);
+        audit(existed ? 'replace' : 'add', safeFolder, safeFile, req);
+        
+        console.log('✅ تم حفظ:', filePath, '(' + (size / 1024).toFixed(1) + ' KB)');
+        
+        res.json({
+            success: true,
+            path: filePath,
+            size: size,
+            folder: safeFolder,
+            file: safeFile
+        });
+        
+    } catch (error) {
+        console.error('❌ خطأ في الحفظ:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ============================================================
+// 🗑️ حذف ملف
+// ============================================================
+app.delete('/api/archive/file/:folder/:file', async (req, res) => {
+    try {
+        const folderName = decodeURIComponent(req.params.folder);
+        const fileName = decodeURIComponent(req.params.file);
+        
+        if (folderName.includes('..') || fileName.includes('..')) {
+            return res.status(400).json({ error: 'مسار غير صالح' });
+        }
+        
+        const filePath = path.join(CONFIG.ARCHIVE_PATH, folderName, fileName);
+        await fs.unlink(filePath);
+        audit('delete', folderName, fileName, req);
+        
+        console.log('🗑️ تم حذف:', filePath);
+        res.json({ success: true });
+        
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ============================================================
+// 🔧 دوال مساعدة
+// ============================================================
+function sanitizeName(name) {
+    return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim();
+}
+
+function getMimeType(fileName) {
+    const ext = fileName.toLowerCase().split('.').pop();
+    const types = {
+        'pdf': 'application/pdf',
+        'xls': 'application/vnd.ms-excel',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'doc': 'application/msword',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'png': 'image/png'
+    };
+    return types[ext] || 'application/octet-stream';
+}
+
+// ============================================================
+// 🔗 ربط NAS قبل بدء الخادم
+// ============================================================
+connectToNAS();
+
+// ============================================================
+// 🚀 تشغيل الخادم
+// ============================================================
+app.listen(CONFIG.PORT, '0.0.0.0', () => {
+    console.log('');
+    console.log('═══════════════════════════════════════════════');
+    console.log('  🖥️  خادم الأرشيف المحلي يعمل');
+    console.log('═══════════════════════════════════════════════');
+    console.log('  📡 المنفذ:           ' + CONFIG.PORT);
+    console.log('  📁 مجلد الأرشيف:     ' + CONFIG.ARCHIVE_PATH);
+    console.log('  🔐 API Key:          ' + (CONFIG.API_KEY ? 'مفعّل' : 'معطّل'));
+    if (CONFIG.API_KEY === 'your-secret-key-change-me') {
+        console.log('  ⚠️  تحذير: مفتاح API ما زال القيمة الافتراضية — غيّره في CONFIG.API_KEY (وفي local-server.js بنفس القيمة).');
+    }
+    console.log('');
+    console.log('  🌐 روابط الوصول:');
+    
+    const os = require('os');
+    const interfaces = os.networkInterfaces();
+    for (let name in interfaces) {
+        for (let iface of interfaces[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+                console.log('     → http://' + iface.address + ':' + CONFIG.PORT);
+            }
+        }
+    }
+    console.log('     → http://localhost:' + CONFIG.PORT);
+    console.log('');
+    console.log('  ⏹️  للإيقاف: Ctrl + C');
+    console.log('═══════════════════════════════════════════════');
+    console.log('');
+});
