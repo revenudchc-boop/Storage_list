@@ -92,9 +92,10 @@ async function loadLocalArchiveFolders() {
                 name: f.name,
                 size: f.size,
                 path: `archive/${folder.name}/${f.name}`,
-                download_url: `${_activeServerUrl}${f.url}?apiKey=${LOCAL_SERVER_CONFIG.API_KEY}`,
+                download_url: `${_activeServerUrl}${f.url}?apiKey=${LOCAL_SERVER_CONFIG.API_KEY}&user=${_auditUser()}`,
                 sha: null,
-                modified: f.modified
+                modified: f.modified,
+                created: f.created
             })),
             filesCount: folder.filesCount,
             sha: null,
@@ -120,7 +121,8 @@ async function uploadToLocalServer(folderName, fileName, base64Data) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-API-Key': LOCAL_SERVER_CONFIG.API_KEY
+                'X-API-Key': LOCAL_SERVER_CONFIG.API_KEY,
+                'X-User': _auditUser()
             },
             body: JSON.stringify({
                 folderName: folderName,
@@ -142,6 +144,23 @@ async function uploadToLocalServer(folderName, fileName, base64Data) {
     }
 }
 
+// اسم المستخدم الحالي (مُرمَّز) لسجل العمليات على الخادم
+function _auditUser() {
+    try { const u = typeof getCurrentUser === 'function' ? getCurrentUser() : null; return encodeURIComponent((u && (u.fullName || u.username)) || ''); } catch (e) { return ''; }
+}
+
+// سجل عمليات مستند من الخادم المحلي (فارغ إن لم يتوفر الخادم)
+async function fetchLocalHistory(folderName, fileName) {
+    if (!_localServerAvailable) return [];
+    try {
+        const r = await fetch(`${_activeServerUrl}/api/archive/history/${encodeURIComponent(folderName)}/${encodeURIComponent(fileName)}?apiKey=${LOCAL_SERVER_CONFIG.API_KEY}`);
+        if (!r.ok) return [];
+        const d = await r.json();
+        return d && d.success ? d.events || [] : [];
+    } catch (e) { return []; }
+}
+window.fetchLocalHistory = fetchLocalHistory;
+
 // ============================================================
 // 🗑️ حذف ملف من الخادم المحلي
 // ============================================================
@@ -153,7 +172,7 @@ async function deleteFromLocalServer(folderName, fileName) {
     try {
         const response = await fetch(
             `${_activeServerUrl}/api/archive/file/${encodeURIComponent(folderName)}/${encodeURIComponent(fileName)}?apiKey=${LOCAL_SERVER_CONFIG.API_KEY}`,
-            { method: 'DELETE' }
+            { method: 'DELETE', headers: { 'X-User': _auditUser() } }
         );
         
         return { success: response.ok };

@@ -123,46 +123,18 @@
             <ul>${items.map((i, k) => `<li><u style="background:${COLORS[k % COLORS.length]}"></u>${esc(i.name)}<b>${i.value}</b></li>`).join('')}</ul></div>`;
     }
     // لا روابط لفتح ملفات الأرشيف في اللوحة: عرض معلومات فقط
-    const srcTag = f => `<em class="tag ${f.local && f.gh ? 'both' : f.local ? 'loc' : 'gh'}">${f.local && f.gh ? 'محلي + GitHub' : f.local ? 'محلي' : 'GitHub'}</em>`;
-    const row = (f, withFolder) => `<li><span class="nm" title="${esc(f.name)}">📄 ${withFolder ? esc(f.folder) + ' / ' : ''}${esc(f.name)}</span><span class="mt">${fmtSize(f.size)}${f.date ? ' · ' + ago(f.date) : ''}</span>${srcTag(f)}</li>`;
+    const srcTag = f => !isAdm() ? '' : `<em class="tag ${f.local && f.gh ? 'both' : f.local ? 'loc' : 'gh'}">${f.local && f.gh ? 'محلي + GitHub' : f.local ? 'محلي' : 'GitHub'}</em>`;
+    const row = (f, withFolder) => `<li><span class="nm" title="${esc(f.name)}">📄 ${withFolder ? esc(f.folder) + ' / ' : ''}${esc(f.name)}</span><span class="mt">${isAdm() ? fmtSize(f.size) + (f.date ? ' · ' : '') : ''}${f.date ? ago(f.date) : ''}</span>${srcTag(f)}</li>`;
     const kpi = (icon, label, val, sub, c) => `<div class="dv-kpi" style="--c:${c}"><div class="ic">${icon}</div><div><small>${label}</small><div class="n">${val}</div><div class="s">${sub || '&nbsp;'}</div></div></div>`;
 
-    // ما تعرضه اللوحة يتبع الصلاحيات: الأرشيف لمن يملك archive (وبحسب خطوطه)، حالة المصادر والمزامنة للمدير ومن يملك الرفع،
-    // إحصاءات المسح لمن يملك scan، والنسخ الاحتياطي للمدير فقط
-    const canOps = () => isAdm() || (typeof hasPerm === 'function' && !!hasPerm('upload'));
-    function scopeNote() {
-        const u = (typeof getCurrentUser === 'function' && getCurrentUser()) || {};
-        const lines = (u.role === 'admin' || (u.lineIds || []).includes('*')) ? 'كل الخطوط' : (u.lineIds || []).join(' • ') || 'لا خطوط';
-        const parts = [canArch() ? '🗄️ الأرشيف' : '🚢 ملخص سفنك (بدون فتح الملفات)'];
-        if (typeof hasPerm === 'function') { if (hasPerm('scan')) parts.push('📠 المسح'); if (canOps()) parts.push('☁️ المصادر والمزامنة'); }
-        if (isAdm()) parts.push('💾 النسخ الاحتياطي');
-        return '';
-        // eslint-disable-next-line no-unreachable
-        return `<p class="dv-note">👁️ تُعرض البيانات حسب صلاحياتك — الخطوط: <b>${esc(lines)}</b> · الأقسام: ${parts.join(' ، ')}</p>`;
-    }
     function render(d, st) {
-        const L = d.latest, s = d.sync, ops = canOps();
-        if (!canArch()) {   // بلا صلاحية الأرشيف: ملخص سفن خطوطه فقط — بلا أسماء ملفات ولا أحجام ولا مزامنة
-            $('#dvBody').innerHTML = scopeNote() + `
-            <div class="dv-kpis">
-                ${kpi('🚢', 'سفن خطوطك', d.ships.length, 'حسب الخطوط المخصصة لك', '#0e7490')}
-                ${kpi('🕘', 'آخر سفينة', L ? esc(L.name.split('_')[0]) : '—', L && L.date ? fmtDate(L.date) + ' · ' + ago(L.date) : '', '#14b8a6')}
-                ${kpi('📁', 'عدد المستندات', d.total, '', '#f59e0b')}
-            </div>
-            <div class="dv-grid g2">
-                <div class="dv-card"><h3>🏷️ حسب الخط الملاحي</h3>${hbars(d.byLine)}</div>
-                <div class="dv-card"><h3>📅 النشاط الشهري</h3>${vbars(d.byMonth)}</div>
-            </div>
-            <div class="dv-grid"><div class="dv-card"><h3>🚢 سفن خطوطك</h3><ul class="dv-list">${d.ships.slice(0, 12).map(sh => `<li><span class="nm">${esc(sh.name)}</span><span class="mt">${sh.files.length} مستند${sh.date ? ' · ' + fmtDate(sh.date) : ''}</span></li>`).join('') || '<li class="dv-empty">لا توجد سفن لخطوطك بعد</li>'}</ul></div></div>${extrasHtml()}`;
-            bindExtras(d);
-            return;
-        }
-        $('#dvBody').innerHTML = scopeNote() + `
+        const L = d.latest, s = d.sync;
+        $('#dvBody').innerHTML = `
         <div class="dv-kpis">
             ${kpi('📁', 'إجمالي الملفات', d.total, `${d.ships.length} سفينة`, '#0e7490')}
             ${kpi('🚢', 'آخر سفينة', L ? esc(L.name.split('_')[0]) : '—', L && L.date ? fmtDate(L.date) + ' · ' + ago(L.date) : '', '#14b8a6')}
-            ${kpi('💾', 'حجم الأرشيف', fmtSize(d.bytes), '', '#f59e0b')}
-            ${!ops ? '' : kpi('🔄', 'المزامنة', s.localOnly + s.ghOnly === 0 ? 'متطابقة ✓' : (s.localOnly + s.ghOnly) + ' فرق', `${s.both} ملف في المصدرين`, s.localOnly + s.ghOnly === 0 ? '#16a34a' : '#ef4444')}
+            ${isAdm() ? kpi('💾', 'حجم الأرشيف', fmtSize(d.bytes), '', '#f59e0b') : kpi('🕘', 'آخر ملف', d.recent[0] && d.recent[0].date ? ago(d.recent[0].date) : '—', d.recent[0] && d.recent[0].date ? fmtDate(d.recent[0].date) : '', '#f59e0b')}
+            ${isAdm() ? kpi('🔄', 'المزامنة', s.localOnly + s.ghOnly === 0 ? 'متطابقة ✓' : (s.localOnly + s.ghOnly) + ' فرق', `${s.both} ملف في المصدرين`, s.localOnly + s.ghOnly === 0 ? '#16a34a' : '#ef4444') : kpi('📅', 'هذا الشهر', d.files.filter(f => f.date && f.date.slice(0, 7) === new Date().toISOString().slice(0, 7)).length, 'ملف', '#16a34a')}
         </div>
 
         <div class="dv-grid g3">
@@ -171,8 +143,8 @@
             <div class="dv-card"><h3>🗂️ نوع الملفات</h3>${donut(d.byType, 'ملف')}</div>
         </div>
         <div class="dv-grid g2">
-            <div class="dv-card" id="dvSrc"><h3>☁️ حالة المصادر</h3>${donut([{ name: 'في المصدرين', value: s.both }, { name: 'محلي فقط', value: s.localOnly }, { name: 'GitHub فقط', value: s.ghOnly }].filter(i => i.value), 'ملف')}
-                <p class="dv-note">${st.local || !st.localDone ? '' : '⚠️ الخادم المحلي غير متصل؛ تُعرض بيانات GitHub فقط. '}${st.gh || !st.ghDone ? '' : '⚠️ تعذّر قراءة فهرس GitHub. '}${s.localOnly ? `يوجد ${s.localOnly} ملف محلي غير مرفوع إلى GitHub (استخدم «مزامنة» من نافذة الأرشيف). ` : ''}${s.ghOnly ? `يوجد ${s.ghOnly} ملف على GitHub غير موجود محلياً.` : ''}</p></div>
+            ${isAdm() ? `            <div class="dv-card"><h3>☁️ حالة المصادر</h3>${donut([{ name: 'في المصدرين', value: s.both }, { name: 'محلي فقط', value: s.localOnly }, { name: 'GitHub فقط', value: s.ghOnly }].filter(i => i.value), 'ملف')}
+                <p class="dv-note">${st.local || !st.localDone ? '' : '⚠️ الخادم المحلي غير متصل؛ تُعرض بيانات GitHub فقط. '}${st.gh || !st.ghDone ? '' : '⚠️ تعذّر قراءة فهرس GitHub. '}${s.localOnly ? `يوجد ${s.localOnly} ملف محلي غير مرفوع إلى GitHub (استخدم «مزامنة» من نافذة الأرشيف). ` : ''}${s.ghOnly ? `يوجد ${s.ghOnly} ملف على GitHub غير موجود محلياً.` : ''}</p></div>` : ''}
             <div class="dv-card"><h3>🚢 أحدث السفن</h3><ul class="dv-list">${d.ships.slice(0, 6).map(sh => `<li><span class="nm">${esc(sh.name)}</span><span class="mt">${sh.files.length} ملف${sh.date ? ' · ' + fmtDate(sh.date) : ''}</span></li>`).join('') || '<li class="dv-empty">—</li>'}</ul></div>
         </div>
 		
@@ -182,25 +154,23 @@
             <div class="dv-card"><h3>🕘 آخر الملفات</h3>
                 ${d.recent.length ? `<ul class="dv-list">${d.recent.map(f => row(f, true)).join('')}</ul>` : '<div class="dv-empty">لا توجد ملفات</div>'}</div>
         </div>${extrasHtml()}`;
-        if (!ops) { const sc = $('#dvSrc'); if (sc) { const nx = sc.nextElementSibling; sc.remove(); if (nx) nx.style.gridColumn = '1/-1'; } }
         bindExtras(d);
     }
 
 
     // ---------- إحصاءات المسح + النسخ الاحتياطي ----------
     const isAdm = () => { const u = typeof getCurrentUser === 'function' ? getCurrentUser() : null; return !!(u && u.role === 'admin'); };
-    const canArch = () => typeof hasPerm === 'function' ? !!hasPerm('archive') : isAdm();
-    const canScanStats = () => typeof hasPerm === 'function' ? !!hasPerm('scan') : isAdm();
+    const canScanStats = () => isAdm();   // عمليات المسح والأرشفة للمدير فقط؛ المشاهد يرى إحصاءات سفنه
     function extrasHtml() {
-        if (!isAdm()) return '';   // بطاقة إحصاءات المسح مخفية؛ تبقى بطاقة النسخ الاحتياطي للمدير
+        if (!canScanStats() && !isAdm()) return '';
         return `<div class="dv-grid g2" id="dvExtras">
-            ${false ? '<div class="dv-card" id="dvScan"><h3>📠 إحصاءات المسح <small id="dvScanWhen"></small></h3><div id="dvScanBody"><div class="dv-empty">اضغط «تحميل» لقراءة سجلات المسح من GitHub (يلزم رمز GitHub مفعّل)</div></div><p class="dv-note"><button class="dv-btn" id="dvScanLoad">📊 تحميل الإحصاءات</button></p></div>' : ''}
+            ${canScanStats() ? '<div class="dv-card" id="dvScan"><h3>📠 إحصاءات المسح <small id="dvScanWhen"></small></h3><div id="dvScanBody"><div class="dv-empty">اضغط «تحميل» لقراءة سجلات المسح من GitHub (يلزم رمز GitHub مفعّل)</div></div><p class="dv-note"><button class="dv-btn" id="dvScanLoad">📊 تحميل الإحصاءات</button></p></div>' : ''}
             ${isAdm() ? '<div class="dv-card" id="dvBackup"><h3>💾 النسخ الاحتياطي وحجم المستودع</h3><div id="dvBackBody"><div class="dv-empty">⏳ جارٍ فحص حجم المستودع…</div></div><p class="dv-note"><button class="dv-btn" id="dvBackDl">⬇️ تنزيل نسخة احتياطية (بيانات)</button><br>تشمل: فهرس الملفات وسجلات المسح (_info.json) وملف المستخدمين وملفات إعدادات المسح. <b>احفظها في مكان آمن</b> لأن ملف المستخدمين قد يحوي كلمات مرور. الملفات نفسها محفوظة في مستودع GitHub — لنسخة كاملة استخدم <b>tools/backup-repo.bat</b>.</p></div>' : ''}
         </div>`;
     }
     function scanCard(entries, when) {
         const body = $('#dvScanBody'); if (!body) return;
-        if (!isAdm()) entries = entries.filter(e => (e.files && e.files.length) ? e.files.some(f => canSee(typeof f === 'string' ? f : (f && f.name) || '')) : canSee(e.folder || ''));   // غير المدير: عمليات مسح خطوطه فقط
+        if (!isAdm()) entries = (entries || []).filter(e => (e.files || []).some(canSee));   // المشاهد يرى سجلات خطوطه فقط
         if (!entries.length) { body.innerHTML = '<div class="dv-empty">لا توجد عمليات مسح مسجّلة بعد</div>'; return; }
         const docs = e => (e.files || []).length || 1, now = Date.now(), within = d => entries.filter(e => now - new Date(e.t).getTime() <= d * 86400000);
         const sum = (a, f) => a.reduce((x, e) => x + f(e), 0), cnt = (key) => Object.entries(entries.reduce((m, e) => { const k = key(e) || '—'; m[k] = (m[k] || 0) + docs(e); return m; }, {})).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, value]) => ({ name, value }));
@@ -276,8 +246,8 @@
     function paintState(S) {
         const body = $('#dvBody'), pill = (label, done, ok) => `<span class="dv-pill ${done && ok ? 'ok' : 'bad'}">${label} ${!done ? 'جاري الفحص…' : ok ? 'متصل' : 'غير متصل'}</span>`;
         if (!body) return;
-        $('#dvStatus').innerHTML = !canOps() ? '' : pill('🖥️ المحلي', S.localDone, !!S.local) + pill('☁️ GitHub', S.ghDone, !!S.gh)
-            + (S.localDone && S.ghDone ? '' : '<span class="dv-pill bad">⏳ جاري التحديث</span>');
+        $('#dvStatus').innerHTML = isAdm() ? pill('🖥️ المحلي', S.localDone, !!S.local) + pill('☁️ GitHub', S.ghDone, !!S.gh)
+            + (S.localDone && S.ghDone ? '' : '<span class="dv-pill bad">⏳ جاري التحديث</span>') : (S.localDone && S.ghDone ? '' : '<span class="dv-pill bad">⏳ جاري التحديث</span>');
         if (!S.local && !S.gh) {
             body.innerHTML = S.localDone && S.ghDone
                 ? '<div class="dv-empty big">لا يمكن الوصول إلى أي مصدر للأرشيف حالياً.<br>تحقق من الخادم المحلي أو الاتصال بالإنترنت ثم اضغط «تحديث».</div>'
@@ -456,6 +426,7 @@
     function build() {
         if (built) return; built = true;
         const user = (typeof getCurrentUser === 'function' && getCurrentUser()) || {};
+        const canOpenArchive = user.role === 'admin' || (typeof hasPerm === 'function' && ['scan', 'upload', 'delete'].some(p => hasPerm(p)));
         const tabs = [...document.querySelectorAll('.tabs .tab-btn')];
         const side = document.createElement('aside');
         side.id = 'sidebar';
@@ -465,7 +436,7 @@
                 <button class="sb-item active" data-go="dash">📊 لوحة المؤشرات</button>
                 <div class="sb-title">التقارير</div>
                 ${tabs.map(t => `<button class="sb-item" data-tab="${esc(t.dataset.tab)}">${esc(t.textContent.trim())}</button>`).join('')}
-                ${canArch() ? '<div class="sb-title sb-arch">الأرشيف</div><button class="sb-item" data-go="archive">🗄️ فتح الأرشيف</button>' : ''}
+                ${canOpenArchive ? '<div class="sb-title">الأرشيف</div><button class="sb-item" data-go="archive">🗄️ فتح الأرشيف</button>' : ''}
                 ${user.role === 'admin' ? '<div class="sb-title">الإدارة</div><button class="sb-item" data-go="users">⚙️ إعدادات المستخدمين</button>' : ''}
             </nav>
             <div class="sb-user"><div class="av">${esc((user.fullName || '?').trim().charAt(0).toUpperCase())}</div>
@@ -478,7 +449,7 @@
 
         const view = document.createElement('section');
         view.id = 'dashView';
-        view.innerHTML = '<div class="dv-head"><div><h2>لوحة المؤشرات</h2></div><div class="dv-tools"><span id="dvStatus"></span><button class="dv-btn" id="dvRefresh">🔄 تحديث</button></div></div><div id="dvBody"></div>';
+        view.innerHTML = '<div class="dv-head"><div><h2>لوحة المؤشرات</h2><p id="dvSub">نظرة شاملة على الأرشيف المحلي وGitHub</p></div><div class="dv-tools"><span id="dvStatus"></span><button class="dv-btn" id="dvRefresh">🔄 تحديث</button></div></div><div id="dvBody"></div>';
         const header = $('#appContainer .header');
         header.parentNode.insertBefore(view, header.nextSibling);
         buildToolbar(header);
@@ -494,6 +465,7 @@
             else if (b.dataset.go === 'archive') { const a = $('#archiveBtn') || document.querySelector('button[id*="rchive"]:not(#createArchiveBtn)'); if (a) a.click(); else alert('زر الأرشيف غير متاح لحسابك.'); }
         });
         $('#sbLogout').onclick = () => { if (confirm('تسجيل الخروج؟')) logout(); };
+        if (!(user.role === 'admin')) $('#dvSub').textContent = 'إحصائيات السفن والملفات الخاصة بك';
         $('#dvRefresh').onclick = loadDash;
         loadDash();
     }

@@ -305,7 +305,7 @@ function isLoggedIn() {
 }
 
 // صلاحيات دقيقة: المدير يملك كل شيء، وغيره يحتاج وجود الصلاحية في حقل perms بملف users.json
-// القيم المعروفة: "archive" (عرض الأرشيف)، "scan" (مسح)، "upload" (رفع)، "delete" (حذف) أو "*" لكلها
+// القيم المعروفة: "scan" (مسح)، "upload" (رفع)، "delete" (حذف) أو "*" لكلها
 function hasPerm(p) {
     const u = getCurrentUser();
     if (!u) return false;
@@ -313,19 +313,6 @@ function hasPerm(p) {
     return Array.isArray(u.perms) && (u.perms.includes(p) || u.perms.includes('*'));
 }
 window.hasPerm = hasPerm;
-
-// 🗄️ الأرشيف مخفي تماماً عمّن لا يملك صلاحية «archive» (المدير يراه دائماً)
-function syncArchiveVisibility() {
-    const ok = hasPerm('archive');
-    const ab = document.getElementById('archiveBtn');
-    if (ab) ab.style.display = ok ? 'inline-block' : 'none';
-    const cb = document.getElementById('createArchiveBtn');
-    if (cb && !(ok && hasPerm('upload'))) cb.style.display = 'none';
-    const n = document.getElementById('archiveNotification');
-    if (n && !ok) n.style.display = 'none';
-    document.querySelectorAll('#sidebar [data-go="archive"], #sidebar .sb-arch').forEach(el => { el.style.display = ok ? '' : 'none'; });
-}
-window.syncArchiveVisibility = syncArchiveVisibility;
 
 function isAdmin() {
     const u = getCurrentUser();
@@ -374,7 +361,6 @@ function applyPermissions() {
     
     // عرض معلومات المستخدم في الشريط العلوي
     updateUserBar(user);
-    syncArchiveVisibility();
     
     if (user.role === 'admin') {
         // 👑 Admin يرى كل شيء
@@ -393,8 +379,10 @@ function applyPermissions() {
         '#fileInput', '.file-label',           // رفع الملفات
         '#addGlobalLineBtn', '#newGlobalLineName', // إدارة الخطوط
         '#manageUsersBtn',                      // إدارة المستخدمين
-        '.settings-btn'                         // أزرار الإعدادات
+        '.settings-btn', '.settings-panel'      // أزرار ولوحات الإعدادات (فترات السماح/الاستثناءات)
     ];
+    if (!writer) elementsToHide.push('#archiveBtn');               // زر أرشيف السفن لمن لديه أي صلاحية كتابة
+    if (!hasPerm('upload')) elementsToHide.push('#createArchiveBtn'); // إنشاء مجلد أرشيف = صلاحية الرفع
     const tokBtn = document.getElementById('setTokenBtn');           // زر الرمز: لأصحاب صلاحيات الكتابة الذين لا رمز لديهم
     if (tokBtn) tokBtn.style.display = (writer && !(localStorage.getItem('github_token') || '').trim()) ? 'inline-block' : 'none';
     
@@ -417,7 +405,7 @@ function updateUserBar(user) {
     const bar = document.getElementById('userBar');
     if (!bar) return;
     
-    const PL = { archive: 'أرشيف', scan: 'مسح', upload: 'رفع', delete: 'حذف' };
+    const PL = { scan: 'مسح', upload: 'رفع', delete: 'حذف' };
     const pl = user.role === 'admin' ? [] : (Array.isArray(user.perms) && user.perms.includes('*') ? Object.values(PL) : Object.keys(PL).filter(k => (user.perms || []).includes(k)).map(k => PL[k]));
     const roleLabel = user.role === 'admin' ? '👑 مدير' : ('👁️ مشاهد' + (pl.length ? ' + ' + pl.join('/') : ''));
     const linesLabel = user.lineIds.includes('*') ? 'كل الخطوط' : user.lineIds.join(' • ');

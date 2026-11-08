@@ -197,7 +197,8 @@ if (!names.isFinalout &&
                 await updateArchiveInfo(folderName, {
                     shipName: names.shipName,
                     date: names.date,
-                    lastUpdate: new Date().toISOString()
+                    lastUpdate: new Date().toISOString(),
+                    _event: { file: reportFileName, a: existingSha ? 'replace' : 'add' }
                 }, names.lineId);
             } else {
                 const err = await uploadResp.json();
@@ -236,72 +237,81 @@ if (!names.isFinalout &&
 // ============================================================
 async function updateArchiveInfo(folderName, newData, lineId) {
     const token = localStorage.getItem("github_token");
-    if (!token) return;
+    if (!token) return false;
 
     const infoPath = `${ARCHIVE_FOLDER}/${folderName}/_info.json`;
     const apiUrl = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${infoPath}`;
+    const headers = { "Authorization": `Bearer ${token}`, "Accept": "application/vnd.github+json" };
 
-    try {
-        let existingInfo = {};
-        let existingSha = null;
+    // قراءة ← دمج ← حفظ؛ وإن كتب مستخدم آخر في الأثناء (تعارض sha) نعيد القراءة والدمج حتى لا يضيع أي سجل
+    for (let attempt = 1; attempt <= 5; attempt++) {
+        try {
+            let existingInfo = {};
+            let existingSha = null;
 
-        const getResp = await fetch(`${apiUrl}?ref=${GH_BRANCH}`, {
-            headers: {
-                "Authorization": `Bearer ${token}`,
-                "Accept": "application/vnd.github+json"
+            const getResp = await fetch(`${apiUrl}?ref=${GH_BRANCH}&t=${Date.now()}`, { headers });
+            if (getResp.ok) {
+                const data = await getResp.json();
+                existingSha = data.sha;
+                try {
+                    existingInfo = JSON.parse(decodeURIComponent(escape(atob(data.content.replace(/\n/g, '')))));
+                } catch (e) {
+                    existingInfo = {};
+                }
             }
-        });
 
-        if (getResp.ok) {
-            const data = await getResp.json();
-            existingSha = data.sha;
-            try {
-                existingInfo = JSON.parse(decodeURIComponent(escape(atob(data.content.replace(/\n/g, '')))));
-            } catch (e) {
-                existingInfo = {};
+            // 🆕 إدارة قائمة الخطوط المسجلة
+            let existingLines = existingInfo.lines || [];
+            if (lineId && !existingLines.includes(lineId)) {
+                existingLines.push(lineId);
             }
+
+            const mergedInfo = {
+                ...existingInfo,
+                ...newData,
+                lines: existingLines,
+                documents: existingInfo.documents || []
+            };
+            // سجل تواريخ المستند: يُضاف حدث (add/replace/delete) إلى history[الملف] مع اسم المستخدم
+            delete mergedInfo._event;
+            const ev = newData && newData._event;
+            if (ev && ev.file) {
+                const h = mergedInfo.history = { ...(existingInfo.history || {}) };
+                const cu = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
+                h[ev.file] = (h[ev.file] || []).concat([{ t: new Date().toISOString(), a: ev.a, u: (cu && (cu.fullName || cu.username)) || '' }]).slice(-30);
+            }
+
+            const body = {
+                message: `Update info for ${folderName}`,
+                content: btoa(unescape(encodeURIComponent(JSON.stringify(mergedInfo, null, 2)))),
+                branch: GH_BRANCH
+            };
+            if (existingSha) body.sha = existingSha;
+
+            const resp = await fetch(apiUrl, {
+                method: "PUT",
+                headers: { ...headers, "Content-Type": "application/json" },
+                body: JSON.stringify(body)
+            });
+            if (resp.ok) return true;
+            if ((resp.status === 409 || resp.status === 422) && attempt < 5) {   // تعارض: أعد المحاولة بعد مهلة عشوائية قصيرة
+                await new Promise(r => setTimeout(r, 300 + Math.random() * 700 * attempt));
+                continue;
+            }
+            console.warn("⚠️ [الأرشيف] فشل تحديث _info.json: HTTP", resp.status);
+            return false;
+        } catch (e) {
+            console.warn("⚠️ [الأرشيف] فشل تحديث _info.json:", e.message);
+            return false;
         }
-
-        // 🆕 إدارة قائمة الخطوط المسجلة
-        let existingLines = existingInfo.lines || [];
-        if (lineId && !existingLines.includes(lineId)) {
-            existingLines.push(lineId);
-        }
-
-        const mergedInfo = {
-            ...existingInfo,
-            ...newData,
-            lines: existingLines,
-            documents: existingInfo.documents || []
-        };
-
-        const body = {
-            message: `Update info for ${folderName}`,
-            content: btoa(unescape(encodeURIComponent(JSON.stringify(mergedInfo, null, 2)))),
-            branch: GH_BRANCH
-        };
-        if (existingSha) body.sha = existingSha;
-
-        await fetch(apiUrl, {
-            method: "PUT",
-            headers: {
-                "Authorization": `Bearer ${token}`,
-                "Accept": "application/vnd.github+json",
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(body)
-        });
-
-    } catch (e) {
-        console.warn("⚠️ [الأرشيف] فشل تحديث _info.json:", e.message);
     }
+    return false;
 }
 
 // ============================================================
 // 🎯 فتح نافذة الأرشيف
 // ============================================================
 async function openArchiveWindow() {
-    if (typeof hasPerm === 'function' && !hasPerm('archive')) { alert('⛔ ليس لديك صلاحية فتح الأرشيف'); return; }
     console.log("📂 فتح الأرشيف الإلكتروني...");
     
     let filterShip = "";
@@ -360,8 +370,8 @@ window.openFilteredArchive = async function(shipName, shipDate) {
 // ============================================================
 async function openArchiveInternal(filterShip, filterDate) {
     // الأرشيف لأصحاب صلاحيات الكتابة (مسح/رفع/حذف) والمدير فقط — المشاهد العادي لا يفتحه حتى لو استدعى الدالة يدوياً
-    if (typeof hasPerm === 'function' && !hasPerm('archive')) { alert('⛔ ليس لديك صلاحية فتح الأرشيف'); return; }
-    let archiveWindow = window.open('', '_blank', 'width=1200,height=800,scrollbars=yes');
+    if (typeof hasPerm === 'function' && !['scan', 'upload', 'delete'].some(p => hasPerm(p))) { alert('⛔ ليس لديك صلاحية فتح الأرشيف'); return; }
+    let archiveWindow = window.open('', '_blank', 'width=' + Math.min(1500, (screen.availWidth || 1500) - 20) + ',height=800,scrollbars=yes');
     if (!archiveWindow) {
         alert("⚠️ الرجاء السماح للنوافذ المنبثقة");
         return;
@@ -389,7 +399,7 @@ async function openArchiveInternal(filterShip, filterDate) {
             <style>
                 * { font-family: 'Segoe UI', Tahoma, sans-serif; box-sizing: border-box; }
                 body { background: #f0f2f5; padding: 20px; margin: 0; direction: rtl; }
-                .container { max-width: 1200px; margin: auto; background: white; border-radius: 16px; box-shadow: 0 8px 20px rgba(0,0,0,0.1); padding: 25px; }
+                .container { max-width: 1500px; margin: auto; background: white; border-radius: 16px; box-shadow: 0 8px 20px rgba(0,0,0,0.1); padding: 25px; }
                 .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0a3d62; padding-bottom: 15px; margin-bottom: 20px; }
                 .header h1 { color: #0a3d62; margin: 0; font-size: 22px; }
                 .header-actions { display: flex; gap: 10px; }
@@ -417,8 +427,9 @@ async function openArchiveInternal(filterShip, filterDate) {
                 .file-name { display: flex; align-items: center; gap: 10px; color: #333; flex: 1; min-width: 0; }
                 .file-name span:first-child { flex-shrink: 0; font-size: 20px; }
                 .file-name span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-                .file-actions { display: flex; gap: 8px; flex-shrink: 0; }
-                .btn-small { padding: 6px 14px; border-radius: 20px; border: none; cursor: pointer; font-size: 13px; font-weight: bold; }
+                .file-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: nowrap; white-space: nowrap; }
+                .file-name { min-width: 0; }
+                .btn-small { white-space: nowrap; padding: 6px 14px; border-radius: 20px; border: none; cursor: pointer; font-size: 13px; font-weight: bold; }
                 .btn-view { background: #17a2b8; color: white; }
                 .btn-download { background: #28a745; color: white; }
                 .btn-delete { background: #dc3545; color: white; }
@@ -541,9 +552,60 @@ window.ensureXLSX = function() {
                     let body = document.getElementById('folder_' + folderName);
                     if (body) {
                         body.classList.toggle('active');
+                        if (body.classList.contains('active')) { try { window.archiveOpener.markModifiedFiles(folderName, body); } catch (e) { } }
                     }
                 };
                 
+                window.showFileHistory = async function(folder, name, lm, lc) {
+                    var old = document.getElementById('fhModal'); if (old) old.remove();
+                    var esc = function(x) { return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;'); };
+                    var m = document.createElement('div'); m.id = 'fhModal';
+                    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
+                    m.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:760px;width:100%;max-height:85vh;overflow:auto;direction:rtl;box-shadow:0 20px 50px rgba(0,0,0,.35);font-family:inherit;">'
+                        + '<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid #e9ecef;position:sticky;top:0;background:#fff;">'
+                        + '<div><div style="font-weight:700;font-size:16px;">🕘 سجل تواريخ المستند</div><div style="font-size:12px;color:#6c757d;direction:ltr;text-align:right;word-break:break-all;">' + esc(folder) + ' / ' + esc(name) + '</div></div>'
+                        + '<button id="fhClose" style="border:0;background:#f1f3f5;border-radius:8px;width:32px;height:32px;font-size:18px;cursor:pointer;">✕</button></div>'
+                        + '<div id="fhBody" style="padding:16px 18px;"><div style="text-align:center;padding:24px;color:#6c757d;">⏳ جاري قراءة السجل…</div></div></div>';
+                    document.body.appendChild(m);
+                    var close = function() { m.remove(); };
+                    document.getElementById('fhClose').onclick = close;
+                    m.addEventListener('click', function(e) { if (e.target === m) close(); });
+                    var body = document.getElementById('fhBody');
+                    try {
+                        var r = await window.archiveOpener.getArchiveFileHistory(folder, name, lm, lc);
+                        var fmt = function(t) { var d = new Date(t); return isNaN(d) ? esc(t) : d.toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' }) + ' — ' + d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); };
+                        var h = '';
+                        if (!r.events.length) h += '<div style="text-align:center;padding:20px;color:#6c757d;">لا توجد تواريخ مسجّلة لهذا المستند بعد</div>';
+                        else {
+                            var adds = r.events.filter(function(e) { return e.kind !== 'mod'; }), mods = r.events.filter(function(e) { return e.kind === 'mod'; });
+                            var first = adds.length ? adds[adds.length - 1] : r.events[r.events.length - 1], last = mods.length ? mods[0] : null;
+                            h += '<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">'
+                              + '<div style="flex:1;min-width:200px;background:#e7f5ff;border-radius:10px;padding:10px 12px;"><div style="font-size:12px;color:#1971c2;">📥 تاريخ الإضافة</div><div style="font-weight:700;font-size:13px;margin-top:3px;">' + fmt(first.t) + '</div></div>'
+                              + '<div style="flex:1;min-width:200px;background:#fff4e6;border-radius:10px;padding:10px 12px;"><div style="font-size:12px;color:#e8590c;">✏️ آخر تعديل</div><div style="font-weight:700;font-size:13px;margin-top:3px;">' + (last ? fmt(last.t) : 'لم يُعدَّل') + '</div></div></div>';
+                            var col = function(title, color, list, empty) {
+                                var c = '<div style="flex:1;min-width:230px;"><div style="font-weight:700;font-size:14px;color:' + color + ';margin-bottom:8px;">' + title + ' (' + list.length + ')</div>'
+                                      + '<div style="border-right:3px solid ' + color + '33;padding-right:14px;">';
+                                if (!list.length) c += '<div style="font-size:12.5px;color:#868e96;">' + empty + '</div>';
+                                list.forEach(function(e) {
+                                    c += '<div style="position:relative;margin-bottom:12px;"><span style="position:absolute;right:-21px;top:5px;width:11px;height:11px;border-radius:50%;background:' + color + ';border:2px solid #fff;"></span>'
+                                      + '<div style="font-weight:600;font-size:14px;">' + esc(e.label) + '</div>'
+                                      + '<div style="font-size:12.5px;color:#495057;">' + fmt(e.t) + '</div>'
+                                      + '<div style="font-size:12px;color:#868e96;">' + esc(e.src) + (e.who ? ' · 👤 ' + esc(e.who) : '') + '</div></div>';
+                                });
+                                return c + '</div></div>';
+                            };
+                            h += '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;">'
+                              + col('📥 الإضافة', '#1971c2', adds, 'لا يوجد')
+                              + col('✏️ التعديلات', '#e8590c', mods, 'لم يُعدَّل بعد')
+                              + '</div>';
+                        }
+                        (r.notes || []).forEach(function(n) { h += '<div style="font-size:12px;color:#868e96;margin-top:8px;">' + esc(n) + '</div>'; });
+                        body.innerHTML = h;
+                    } catch (err) {
+                        body.innerHTML = '<div style="color:#c92a2a;padding:16px;">تعذّر قراءة السجل: ' + esc(err.message) + '</div>';
+                    }
+                };
+
                 window.downloadFileInArchive = function(url, fileName) {
                     let a = document.createElement('a');
                     a.href = url;
@@ -935,6 +997,7 @@ window.viewFileInArchive = async function(url, fileName) {
 								if (resp.ok) {
 									results.github.success = true;
 									console.log('✅ [GitHub] تم الحذف');
+									try { if (window.archiveOpener && window.archiveOpener.updateArchiveInfo) await window.archiveOpener.updateArchiveInfo(folderName, { _event: { file: fileName, a: 'delete' } }); } catch (e) { }
 								} else {
 									let errMsg = 'HTTP ' + resp.status;
 									try {
@@ -1788,6 +1851,75 @@ function renderArchiveFolders(archiveWindow, folders) {
 }
 
 // ============================================================
+// 🕘 سجل تواريخ مستند: من _info.json + سجل GitHub (commits) + الخادم المحلي
+// ============================================================
+window.getArchiveFileHistory = async function(folder, name, localModified, localCreated) {
+    const ev = [], notes = [], base = `${ARCHIVE_FOLDER}/${folder}`;
+    const token = localStorage.getItem('github_token');
+    const lbl = { add: 'تمت الإضافة للأرشيف', replace: 'تم استبدال/تحديث الملف', delete: 'تم حذف الملف', scan: 'مسح ضوئي' };
+    // 1) _info.json
+    try {
+        let info = null;
+        const r = await fetch(`https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${GH_BRANCH}/${encodeURI(base)}/_info.json?t=${Date.now()}`);
+        if (r.ok) info = await r.json();
+        else if (token && window.Scanner && Scanner.folderInfo) info = await Scanner.folderInfo(folder);
+        if (info) {
+            ((info.history || {})[name] || []).forEach(h => ev.push({ t: h.t, label: lbl[h.a] || h.a, who: h.u, src: 'سجل الأرشيف' }));
+            (info.scanLog || []).filter(e => (e.files || []).includes(name)).forEach(e =>
+                ev.push({ t: e.t, label: 'مسح ضوئي' + (e.pages ? ' (' + e.pages + ' صفحة)' : '') + (e.type ? ' · ' + e.type : ''), who: e.user, src: 'سجل المسح' }));
+            if (info.textIndex && info.textIndex[name]) notes.push('✓ المستند مفهرس للبحث بمحتواه');
+        }
+    } catch (e) { }
+    // 2) تاريخ GitHub الفعلي للملف
+    try {
+        const h = { Accept: 'application/vnd.github+json' }; if (token) h.Authorization = 'Bearer ' + token;
+        const r = await fetch(`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/commits?sha=${GH_BRANCH}&path=${encodeURI(base + '/' + name)}&per_page=30`, { headers: h });
+        if (r.ok) {
+            const cs = await r.json();
+            cs.forEach((c, i) => ev.push({ t: c.commit.committer.date, label: i === cs.length - 1 ? 'أول رفع على GitHub' : 'تعديل على GitHub', who: '', src: 'GitHub' }));
+        } else notes.push('تعذّر قراءة تاريخ GitHub (HTTP ' + r.status + ')');
+    } catch (e) { notes.push('تعذّر الاتصال بـ GitHub'); }
+    // 3) سجل الخادم المحلي (كل العمليات: إضافة/استبدال/حذف/فتح) — يُغني عن سطري التاريخ المأخوذين من الملف نفسه
+    let audit = [];
+    try { if (typeof fetchLocalHistory === 'function') audit = await fetchLocalHistory(folder, name); } catch (e) { }
+    if (audit.length) {
+        audit.forEach(h => ev.push({ t: h.t, label: lbl[h.a] || h.a, who: h.u, src: 'سجل الخادم المحلي', act: h.a }));
+        // نفس الحدث مسجّل في _info.json أيضاً: أبقِ نسخة الخادم (التاريخ الأدق) وأسقط المكرر خلال دقيقتين
+        for (let i = ev.length - 1; i >= 0; i--) {
+            const e = ev[i]; if (e.src !== 'سجل الأرشيف') continue;
+            if (ev.some(o => o.src === 'سجل الخادم المحلي' && o.act === (Object.keys(lbl).find(k => lbl[k] === e.label)) && Math.abs(new Date(o.t) - new Date(e.t)) < 120000)) ev.splice(i, 1);
+        }
+    }
+    const lc = localCreated && new Date(localCreated), lm = localModified && new Date(localModified);
+    if (!audit.length && lc && !isNaN(lc)) ev.push({ t: lc.toISOString(), label: 'إنشاء الملف على الخادم المحلي', who: '', src: 'الخادم المحلي' });
+    if (!audit.length && lm && !isNaN(lm) && (!lc || isNaN(lc) || Math.abs(lm - lc) > 2000)) ev.push({ t: lm.toISOString(), label: 'آخر تعديل على الخادم المحلي', who: '', src: 'الخادم المحلي' });
+    // التصنيف: إضافة (أول رفع/إضافة/إنشاء/مسح) مقابل تعديل (استبدال/تعديل/حذف)
+    ev.forEach(e => { e.kind = /تعديل|استبدال|حذف/.test(e.label) ? 'mod' : 'add'; });
+    ev.sort((a, b) => new Date(b.t) - new Date(a.t));
+    return { events: ev, notes };
+};
+
+// تلوين أسماء المستندات التي عُدِّلت (استُبدلت) حسب history في _info.json؛ تُستدعى عند فتح مجلد في شاشة الأرشيف
+const _modInfoCache = {};
+window.markModifiedFiles = async function(folder, root) {
+    try {
+        if (!root) return;
+        let c = _modInfoCache[folder];
+        if (!c || Date.now() - c.t > 300000) {
+            const r = await fetch(`https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${GH_BRANCH}/${encodeURI(ARCHIVE_FOLDER + '/' + folder)}/_info.json?t=${Date.now()}`);
+            c = _modInfoCache[folder] = { t: Date.now(), h: r.ok ? ((await r.json()).history || {}) : {} };
+        }
+        root.querySelectorAll('.file-row').forEach(row => {
+            const rep = (c.h[row.dataset.fname] || []).filter(e => e.a === 'replace').pop();
+            const sp = row.querySelector('.file-name span[title]');
+            if (!rep || !sp) return;
+            sp.style.color = '#e8590c'; sp.style.fontWeight = '700';
+            if (!/✏️/.test(sp.title)) sp.title += ' — ✏️ تم تعديله ' + new Date(rep.t).toLocaleString('ar-EG') + (rep.u ? ' بواسطة ' + rep.u : '');
+        });
+    } catch (e) { }
+};
+
+// ============================================================
 // 📄 عرض ملفات مجلد
 // ============================================================
 function renderFolderFiles(folder, archiveWindow) {
@@ -1795,6 +1927,7 @@ function renderFolderFiles(folder, archiveWindow) {
         return `<div class="empty" style="padding:20px;font-size:14px;">📭 لا توجد مستندات في هذا المجلد</div>`;
     }
 
+    const ea = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
     let html = '';
     for (let file of folder.files) {
         let sizeText = formatFileSize(file.size);
@@ -1803,16 +1936,23 @@ function renderFolderFiles(folder, archiveWindow) {
             ? `<button class="btn-small btn-delete" onclick="event.stopPropagation(); window.deleteFileInArchive('${file.path}', '${file.sha}', '${folder.name}')">🗑️</button>`
             : '';
 
+        // ملف عُدِّل بعد إنشائه (من تواريخ الخادم المحلي): يُلوَّن اسمه؛ وما عُدِّل على GitHub يُلوَّن لاحقاً من سجل _info.json
+        const lm = file.modified && new Date(file.modified), lcr = file.created && new Date(file.created);
+        const modded = lm && lcr && !isNaN(lm) && !isNaN(lcr) && (lm - lcr) > 60000;
+        const nameStyle = modded ? ' style="color:#e8590c;font-weight:700;"' : '';
+        const nameTitle = ea(file.name) + (modded ? ' — ✏️ تم تعديله ' + lm.toLocaleString('ar-EG') : '');
+
         html += `
-            <div class="file-row">
+            <div class="file-row" data-fname="${ea(file.name)}">
                 <div class="file-name">
                     <span>${icon}</span>
-                    <span title="${file.name}">${file.name}</span>
+                    <span title="${nameTitle}"${nameStyle}>${file.name}</span>
                     <span style="color:#6c757d;font-size:12px;flex-shrink:0;">(${sizeText})</span>
                 </div>
                 <div class="file-actions">
                     <button class="btn-small btn-view" onclick="event.stopPropagation(); window.viewFileInArchive('${file.download_url}', '${file.name}')">👁️ عرض</button>
                     <button class="btn-small btn-download" onclick="event.stopPropagation(); window.downloadFileInArchive('${file.download_url}', '${file.name}')">📥</button>
+                    <button class="btn-small" title="سجل التواريخ" data-folder="${ea(folder.name)}" data-name="${ea(file.name)}" data-lm="${ea(file.modified)}" data-lc="${ea(file.created)}" onclick="event.stopPropagation(); window.showFileHistory(this.dataset.folder, this.dataset.name, this.dataset.lm, this.dataset.lc)" style="background:#e9ecef;color:#495057;">🕘</button>
                     ${deleteBtn}
                 </div>
             </div>
@@ -1919,7 +2059,7 @@ async function _ghPutFile(folderName, cleanName, base64Data) {
         }
         console.log(`✅ [GitHub] تم: ${filePath}`);
         // تحديث _info.json
-        await updateArchiveInfo(folderName, {});
+        await updateArchiveInfo(folderName, { _event: { file: cleanName, a: existingSha ? 'replace' : 'add' } });
         // تحديث الفهرس ومسح الذاكرة المؤقتة
         if (typeof generateAndSaveIndexFromTree === 'function') {
             generateAndSaveIndexFromTree(); // بدون await لكي لا يتأخر الرد
@@ -2088,7 +2228,7 @@ async function checkShipArchive(shipName, shipDate) {
 function showArchiveNotification(shipName, shipDate, matches) {
     // يظهر الإشعار للمدير ولمن لديه أي صلاحية كتابة (مسح/رفع/حذف)؛ المشاهد بلا صلاحيات لا يراه
     const user = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
-    const canSee = user && (user.role === 'admin' || (typeof hasPerm === 'function' && hasPerm('archive')));
+    const canSee = user && (user.role === 'admin' || (typeof hasPerm === 'function' && ['scan', 'upload', 'delete'].some(p => hasPerm(p))));
     if (!canSee) {
         hideArchiveNotification();
         return;
@@ -2163,7 +2303,6 @@ document.addEventListener("DOMContentLoaded", function() {
         archiveBtn.style.cssText = 'background: #0a3d62; color: white; padding: 12px 28px; border-radius: 40px; cursor: pointer; display: inline-block; font-weight: bold; font-size: 16px; margin: 5px; border: none; transition: 0.3s;';
         archiveBtn.onmouseover = function() { this.style.transform = 'translateY(-2px)'; };
         archiveBtn.onmouseout = function() { this.style.transform = 'translateY(0)'; };
-        if (typeof hasPerm === 'function' && !hasPerm('archive')) archiveBtn.style.display = 'none';   // يظهر لاحقاً عبر syncArchiveVisibility لمن يملك الصلاحية
         archiveBtn.onclick = openArchiveWindow;
         toolbar.appendChild(archiveBtn);
     }
